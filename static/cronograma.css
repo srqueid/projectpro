@@ -1,0 +1,76 @@
+/* --- ESTILOS DO GANTT --- */
+.gantt .bar-progress { fill: #3b82f6 !important; }
+.gantt .bar { fill: #e2e8f0 !important; }
+.gantt .bar-label { fill: #1e293b !important; font-weight: 600; font-family: 'Inter', sans-serif; font-size: 13px; }
+.gantt-container { border: none; background: transparent; }
+.gantt .grid-header { fill: #f8fafc; stroke: #e2e8f0; font-weight: bold; }
+.gantt .grid-row { fill: #ffffff; }
+.gantt .grid-row:nth-child(even) { fill: #fcfcfc; }
+
+/* Estilo para a barra de baseline */
+.gantt-bar-baseline .bar {
+    fill: #cbd5e1 !important; /* Cinza mais claro */
+    height: 10px !important;
+    transform: translateY(10px); /* Desloca para baixo */
+}
+.gantt-bar-baseline .bar-progress {
+    fill: #94a3b8 !important; /* Cinza um pouco mais escuro */
+}
+.gantt-bar-baseline .bar-label {
+    display: none; /* Oculta o rótulo da baseline */
+}
+
+/* CORREÇÃO DA BARRA DE ROLAGEM NA BASE */
+.gantt-scroll-wrapper { 
+    width: 100%; 
+    height: 100%; 
+    overflow: auto; 
+    position: relative; 
+    background-color: #ffffff;
+    display: flex;
+    flex-direction: column;
+}
+
+#gantt-chart {
+    flex-grow: 0; 
+    flex-shrink: 0;
+    min-height: 220px;
+}
+
+/* Cores Dinâmicas por Fase */
+.gantt-cat-0 .bar { fill: #bfdbfe !important; } .gantt-cat-0 .bar-progress { fill: #2563eb !important; }
+.gantt-cat-1 .bar { fill: #a7f3d0 !important; } .gantt-cat-1 .bar-progress { fill: #059669 !important; }
+.gantt-cat-2 .bar { fill: #ddd6fe !important; } .gantt-cat-2 .bar-progress { fill: #7c3aed !important; }
+.gantt-cat-3 .bar { fill: #fde68a !important; } .gantt-cat-3 .bar-progress { fill: #d97706 !important; }
+.gantt-cat-4 .bar { fill: #fecdd3 !important; } .gantt-cat-4 .bar-progress { fill: #e11d48 !important; }
+.gantt-cat-5 .bar { fill: #a5f3fc !important; } .gantt-cat-5 .bar-progress { fill: #0891b2 !important; }
+
+.gantt-container .popup-wrapper { background: white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; width: 240px; opacity: 1 !important; z-index: 1000; }
+.gantt-container .popup-wrapper .title { border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 5px; font-weight: bold; }
+
+/* Estilos Linha de Hoje */
+.gantt .today-highlight { stroke: #ef4444 !important; stroke-width: 2px !important; stroke-dasharray: 4 !important; opacity: 0.8; }
+
+/* Fullscreen */
+#gantt-mode-container:fullscreen { background-color: #ffffff; padding: 20px; display: flex; flex-direction: column; width: 100vw; height: 100vh; overflow: hidden; }
+#gantt-mode-container:fullscreen header { margin-bottom: 10px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px; }
+#gantt-mode-container:fullscreen .gantt-scroll-wrapper { height: calc(100vh - 100px); }
+
+.print-only-header { display: none; }
+.zoom-btn.active { background-color: #ffffff; color: #0f172a; font-weight: bold; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
+
+/* --- IMPRESSÃO --- */
+@media print {
+    @page { size: landscape; margin: 5mm; }
+    body { background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; width: 100%; overflow: visible !important; }
+    aside, header, .no-print-cards, .zoom-btn, .h-6, .no-print { display: none !important; }
+    
+    .print-only-header { display: flex !important; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 2px solid #000; padding-bottom: 10px; width: 100%; }
+    #gantt-mode-container, .flex-1, .min-h-0 { display: block !important; width: 100% !important; height: auto !important; overflow: visible !important; flex: none !important; }
+    
+    .gantt-scroll-wrapper { border: none !important; height: auto !important; width: 100% !important; overflow: visible !important; padding: 0 !important; display: block !important;}
+    svg { width: 100% !important; height: auto !important; display: block; }
+    .gantt .grid-header { font-size: 9px !important; } 
+    .gantt .bar-label { font-size: 10px !important; }
+    .gantt .today-highlight { opacity: 1 !important; stroke: #ef4444 !important; }
+}

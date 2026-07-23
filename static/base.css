@@ -1,0 +1,10 @@
+/* === TRANSIÇÕES DA SIDEBAR === */
+.sidebar-transition { transition: width 0.3s ease-in-out; }
+.fade-text { transition: opacity 0.2s; white-space: nowrap; }
+.collapsed .fade-text { opacity: 0; display: none; }
+.collapsed .logo-text { display: none; }
+.collapsed .section-title { display: none; }
+
+/* Centraliza ícones quando encolhido */
+.collapsed nav a { justify-content: center; padding-left: 0; padding-right: 0; }
+

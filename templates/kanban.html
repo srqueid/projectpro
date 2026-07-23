@@ -1,0 +1,187 @@
+{% extends 'base.html' %}
+
+{% block head %}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='kanban.css') }}">
+{% endblock %}
+
+{% block content %}
+    <!-- === HEADER === -->
+    <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0 shadow-sm z-10 no-print">
+        <div>
+            <h1 class="text-lg font-bold text-slate-800">Kanban · Execução</h1>
+            <p class="text-xs text-slate-500">Arraste cards entre colunas · Baselines são atualizadas automaticamente</p>
+        </div>
+        <div class="kanban-toolbar">
+            <button onclick="abrirModalConfig()" class="btn-config" title="Configurar Colunas">
+                ⚙️ Colunas
+            </button>
+            <button onclick="window.print()" class="btn-config">
+                🖨️ Imprimir
+            </button>
+        </div>
+    </header>
+
+    <!-- === CONTEÚDO === -->
+    <div class="flex-1 overflow-hidden p-6 flex flex-col">
+        {% set total_cards = namespace(count=0) %}
+        {% for col in colunas %}
+            {% set total_cards.count = total_cards.count + cards_por_coluna[col.id]|length %}
+        {% endfor %}
+        {% set cards_sem_coluna = cards_por_coluna['__sem_coluna__']|length %}
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 shrink-0">
+            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                <div class="w-12 h-12 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">#</div>
+                <div><p class="text-2xl font-bold text-slate-800">{{ total_cards.count + cards_sem_coluna }}</p><p class="text-xs text-slate-500 font-medium">Total de Cards</p></div>
+            </div>
+            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                <div class="w-12 h-12 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">✓</div>
+                <div><p class="text-2xl font-bold text-slate-800">{{ stats.completed }}</p><p class="text-xs text-slate-500 font-medium">Concluídas</p></div>
+            </div>
+            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                <div class="w-12 h-12 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">⟳</div>
+                <div><p class="text-2xl font-bold text-slate-800">{{ stats.in_progress }}</p><p class="text-xs text-slate-500 font-medium">Em Andamento</p></div>
+            </div>
+            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                <div class="w-12 h-12 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">%</div>
+                <div><p class="text-2xl font-bold text-slate-800">{{ stats.avg }}%</p><p class="text-xs text-slate-500 font-medium">Média</p></div>
+            </div>
+        </div>
+
+        {% if total_cards.count == 0 and cards_sem_coluna == 0 %}
+        <div class="kanban-empty">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>
+            <p class="font-semibold">Nenhuma tarefa encontrada</p>
+            <p class="text-sm">Adicione tarefas na Planilha para visualizar o Kanban.</p>
+            <a href="{{ url_for('main.planilha', project_id=project_id) }}" class="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">Ir para Planilha</a>
+        </div>
+        {% else %}
+        {% set cores_colunas = {
+            'backlog': {'header': '#64748b', 'bg': '#f8fafc', 'border': '#e2e8f0'},
+            'inicio': {'header': '#2563eb', 'bg': '#eff6ff', 'border': '#bfdbfe'},
+            'meio': {'header': '#d97706', 'bg': '#fffbeb', 'border': '#fde68a'},
+            'fim': {'header': '#059669', 'bg': '#ecfdf5', 'border': '#a7f3d0'}
+        } %}
+
+        <div class="kanban-board" id="kanban-board">
+            {% for col in colunas %}
+            {% set cor = cores_colunas.get(col.tipo, {'header': '#475569', 'bg': '#f1f5f9', 'border': '#e2e8f0'}) %}
+            <div class="kanban-column" data-col-id="{{ col.id }}" data-col-tipo="{{ col.tipo }}" style="background: {{ cor.bg }}; border-color: {{ cor.border }};">
+                <div class="kanban-column-header" style="color: {{ cor.header }}; border-bottom-color: {{ cor.border }};">
+                    <span>{{ col.nome }}</span>
+                    <span class="count">{{ cards_por_coluna[col.id]|length }}</span>
+                </div>
+                <div class="kanban-column-body" data-col-id="{{ col.id }}">
+                    {% for t in cards_por_coluna[col.id] %}
+                    {% set pct = t.conclusao|int %}
+                    <div class="kanban-card" 
+                         data-id="{{ t.id }}"
+                         data-col-id="{{ col.id }}"
+                         data-tarefa="{{ t.tarefa }}"
+                         data-subtarefa="{{ t.subtarefa }}"
+                         data-responsavel="{{ t.responsavel }}"
+                         data-fase="{{ t.fase }}"
+                         data-inicio="{{ t.inicio }}"
+                         data-fim="{{ t.fim }}"
+                         data-dias="{{ t.dias }}"
+                         data-conclusao="{{ pct }}"
+                         data-baseline_inicio="{{ t.baseline_inicio }}"
+                         data-baseline_fim="{{ t.baseline_fim }}">
+                        <span class="card-id">#{{ t.id }}</span>
+                        <div class="card-title">{{ t.subtarefa or t.tarefa }}</div>
+                        {% if t.subtarefa and t.tarefa %}
+                        <div class="card-sub">{{ t.tarefa }}</div>
+                        {% endif %}
+                        <div class="card-meta">
+                            {% if t.responsavel %}
+                            <span class="resp">{{ t.responsavel }}</span>
+                            {% endif %}
+                            {% if t.fase %}
+                            <span class="fase-tag">{{ t.fase }}</span>
+                            {% endif %}
+                        </div>
+                        <div class="card-dates">
+                            {% if t.inicio and t.fim %}
+                            <span>📅 {{ t.inicio[:10] }} → {{ t.fim[:10] }}</span>
+                            {% endif %}
+                            {% if t.baseline_inicio %}
+                            <span class="baseline">▶️ {{ t.baseline_inicio[:10] }}</span>
+                            {% endif %}
+                            {% if t.baseline_fim %}
+                            <span class="baseline">🏁 {{ t.baseline_fim[:10] }}</span>
+                            {% endif %}
+                        </div>
+                        <div class="card-progress">
+                            {% set bar_class = 'bar-0' %}
+                            {% if pct == 100 %}{% set bar_class = 'bar-100' %}
+                            {% elif pct >= 75 %}{% set bar_class = 'bar-75' %}
+                            {% elif pct >= 50 %}{% set bar_class = 'bar-50' %}
+                            {% elif pct >= 25 %}{% set bar_class = 'bar-25' %}
+                            {% endif %}
+                            <div class="card-progress-bar {{ bar_class }}" style="width: {{ pct }}%;"></div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+
+            {% if cards_sem_coluna > 0 %}
+            <div class="kanban-column" data-col-id="__sem_coluna__" data-col-tipo="sem_coluna" style="background: #fef2f2; border-color: #fecaca;">
+                <div class="kanban-column-header" style="color: #dc2626; border-bottom-color: #fecaca;">
+                    <span>⚠️ Sem Coluna</span>
+                    <span class="count">{{ cards_sem_coluna }}</span>
+                </div>
+                <div class="kanban-column-body" data-col-id="__sem_coluna__">
+                    {% for t in cards_por_coluna['__sem_coluna__'] %}
+                    <div class="kanban-card" data-id="{{ t.id }}" data-col-id="__sem_coluna__" data-tarefa="{{ t.tarefa }}" data-subtarefa="{{ t.subtarefa }}" data-responsavel="{{ t.responsavel }}" data-fase="{{ t.fase }}" data-inicio="{{ t.inicio }}" data-fim="{{ t.fim }}" data-dias="{{ t.dias }}" data-conclusao="{{ t.conclusao }}" data-baseline_inicio="{{ t.baseline_inicio }}" data-baseline_fim="{{ t.baseline_fim }}">
+                        <span class="card-id">#{{ t.id }}</span>
+                        <div class="card-title">{{ t.subtarefa or t.tarefa }}</div>
+                        {% if t.responsavel %}<div class="card-meta"><span class="resp">{{ t.responsavel }}</span>{% if t.fase %}<span class="fase-tag">{{ t.fase }}</span>{% endif %}</div>{% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- === LEGENDA === -->
+        <div class="flex flex-wrap gap-4 mt-3 text-xs text-slate-500 no-print">
+            <span>▶️ <strong>Baseline Início</strong> (data de início real)</span>
+            <span>🏁 <strong>Baseline Fim</strong> (data de conclusão real)</span>
+            <span>📅 Datas planejadas (início/fim originais)</span>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- === MODAL CONFIGURAÇÃO DE COLUNAS === -->
+    <dialog id="modal-config-colunas" class="modal-config">
+        <div class="modal-body">
+            <div class="flex justify-between items-center mb-4">
+                <h3>⚙️ Configurar Colunas Kanban</h3>
+                <button onclick="document.getElementById('modal-config-colunas').close()" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+            </div>
+            <p class="text-xs text-slate-500 mb-4">
+                <strong>📋 Backlog</strong> = planejado · 
+                <strong>🚀 Iniciar</strong> = define <code>baseline_inicio</code> · 
+                <strong>✅ Concluído</strong> = define <code>baseline_fim</code> e 100%
+            </p>
+            <div id="lista-colunas-config"></div>
+            <button onclick="adicionarColunaConfig()" class="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium">
+                + Adicionar Coluna
+            </button>
+            <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
+                <button onclick="document.getElementById('modal-config-colunas').close()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">Cancelar</button>
+                <button onclick="salvarConfigColunas()" class="px-5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all">Salvar Configuração</button>
+            </div>
+        </div>
+    </dialog>
+
+    <script>
+        // === DADOS DAS COLUNAS (vindo do servidor) ===
+        const colunasData = {{ colunas|tojson }};
+        const projectId = "{{ project_id }}";
+    </script>
+    <script src="{{ url_for('static', filename='kanban.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,136 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+
+:root {
+  --font-sans: 'Inter', sans-serif;
+
+  /* Cores extraídas do seu theme.css (Convertidas para Web) */
+  --background: #ffffff;
+  --foreground: #09090b; /* Preto suave */
+  
+  --card: #ffffff;
+  --card-foreground: #09090b;
+  
+  --popover: #ffffff;
+  --popover-foreground: #09090b;
+  
+  --primary: #18181b; /* Zinco 950 */
+  --primary-foreground: #fafafa;
+  
+  --secondary: #f4f4f5; /* Zinco 100 */
+  --secondary-foreground: #18181b;
+  
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  
+  --accent: #f4f4f5;
+  --accent-foreground: #18181b;
+  
+  --destructive: #ef4444;
+  --destructive-foreground: #fafafa;
+  
+  --border: #e4e4e7; /* Zinco 200 */
+  --input: #e4e4e7;
+  --ring: #18181b;
+  
+  --radius: 0.5rem; /* 8px */
+}
+
+/* Reset básico para garantir que o fundo pegue na tela toda */
+body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    margin: 0;
+}
+
+/* Estilo de Planilha (Spreadsheet) */
+.sheet-input {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    border: none;
+    padding: 8px;
+    font-family: var(--font-sans);
+    color: var(--foreground);
+    outline: none;
+    transition: all 0.2s;
+}
+
+.sheet-input:focus {
+    background: var(--background);
+    box-shadow: inset 0 0 0 2px var(--primary);
+}
+
+.sheet-row:hover {
+    background-color: var(--muted);
+}
+
+/* Remove as setinhas dos inputs de número */
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+  -webkit-appearance: none; 
+  margin: 0; 
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+body {
+    font-family: 'Inter', sans-serif;
+}
+
+/* Scrollbar personalizada fina e elegante */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ============================================ */
+/* ESTILOS KANBAN                               */
+/* ============================================ */
+
+/* Transição suave para cards */
+.kanban-card {
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.kanban-card:hover {
+    transform: translateY(-1px);
+}
+
+/* Cores de progresso nos cards */
+.kanban-card .card-progress-bar {
+    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Efeito de arrasto */
+.sortable-drag {
+    opacity: 0.9;
+    transform: rotate(2deg) scale(1.02);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15) !important;
+}
+
+/* Placeholder enquanto arrasta */
+.sortable-ghost {
+    background: #dbeafe !important;
+    border: 2px dashed #3b82f6 !important;
+    opacity: 0.5;
+}
+
+/* Coluna com drop ativo */
+.kanban-column.drag-over {
+    box-shadow: 0 0 0 2px #3b82f6, 0 4px 12px rgba(59,130,246,0.15);
+}
+
+/* Responsivo: Kanban empilha em mobile */
+@media (max-width: 768px) {
+    .kanban-board {
+        flex-direction: column;
+        overflow-y: auto;
+    }
+    .kanban-column {
+        max-width: 100% !important;
+        width: 100% !important;
+        min-width: unset !important;
+        max-height: 400px;
+    }
+}

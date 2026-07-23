@@ -1,0 +1,29 @@
+{
+    "colunas": [
+        {
+            "id": "backlog",
+            "nome": "📋 Backlog",
+            "tipo": "backlog"
+        },
+        {
+            "id": "iniciar",
+            "nome": "🚀 Iniciar",
+            "tipo": "inicio"
+        },
+        {
+            "id": "emandamento",
+            "nome": "⚙️ Em Andamento",
+            "tipo": "meio"
+        },
+        {
+            "id": "teste",
+            "nome": "Teste",
+            "tipo": "meio"
+        },
+        {
+            "id": "concludo",
+            "nome": "✅ Concluído",
+            "tipo": "fim"
+        }
+    ]
+}
