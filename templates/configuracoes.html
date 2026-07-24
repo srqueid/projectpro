@@ -33,7 +33,82 @@
         <div class="p-8">
             <!-- Aba de Responsáveis -->
             <div id="tab-responsaveis" class="tab-content">
-                <!-- ... (código da aba de responsáveis) ... -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div class="md:col-span-1 bg-gray-50 p-6 rounded-xl border border-gray-200">
+                        <h2 id="form-title" class="font-bold text-lg mb-4 text-slate-800">Adicionar Responsável</h2>
+                        <form id="form-responsavel" action="{{ url_for('main.adicionar_responsavel') }}" method="POST" class="space-y-4">
+                            <input type="hidden" name="id" id="responsavel-id">
+                            <input type="hidden" name="ferias" id="ferias-json">
+                            <div>
+                                <label for="nome" class="block text-sm font-medium text-slate-700">Nome</label>
+                                <input type="text" name="nome" id="nome" required class="mt-1 w-full input-field">
+                            </div>
+                            <div>
+                                <label for="email" class="block text-sm font-medium text-slate-700">E-mail</label>
+                                <input type="email" name="email" id="email" required class="mt-1 w-full input-field">
+                            </div>
+                            <div>
+                                <label for="modelo_trabalho" class="block text-sm font-medium text-slate-700">Modelo de Trabalho</label>
+                                <select name="modelo_trabalho" id="modelo_trabalho" class="mt-1 w-full input-field">
+                                    <option value="Home Office">Home Office</option>
+                                    <option value="Híbrido">Híbrido</option>
+                                    <option value="Alocado">Alocado</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="horas_semanais" class="block text-sm font-medium text-slate-700">Horas/Semana</label>
+                                <input type="number" name="horas_semanais" id="horas_semanais" min="1" class="mt-1 w-full input-field">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700">Períodos de Férias</label>
+                                <div id="ferias-container" class="space-y-2 mt-1"></div>
+                                <button type="button" onclick="addFeriasPeriodo()" class="text-sm text-blue-600 hover:underline mt-2">+ Adicionar Período</button>
+                            </div>
+                            <div class="flex gap-2 pt-2">
+                                <button type="submit" id="btn-submit" class="btn-primary w-full">Adicionar</button>
+                                <button type="button" onclick="resetForm()" id="btn-cancel" class="btn-secondary w-full hidden">Cancelar</button>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="md:col-span-2 bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col h-[600px]">
+                        <div class="bg-gray-100 px-6 py-3 border-b"><span class="font-bold text-slate-700">Cadastrados ({{ responsaveis|length }})</span></div>
+                        <div class="overflow-y-auto flex-1">
+                            {% if responsaveis %}
+                            <table class="w-full text-sm">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 font-semibold text-slate-600 text-left">Nome</th>
+                                        <th class="px-6 py-3 font-semibold text-slate-600 text-left">Modelo</th>
+                                        <th class="px-6 py-3 font-semibold text-slate-600 text-left">Férias</th>
+                                        <th class="px-6 py-3"></th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100">
+                                    {% for r in responsaveis %}
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="px-6 py-3 font-medium">{{ r.get('nome') }}</td>
+                                        <td class="px-6 py-3 text-slate-600">{{ r.get('modelo_trabalho') or 'N/A' }}</td>
+                                        <td class="px-6 py-3 text-slate-600 text-xs">
+                                            {% for periodo in r.get('ferias', []) %}
+                                                <div>{{ periodo.get('inicio') }} a {{ periodo.get('fim') }}</div>
+                                            {% endfor %}
+                                        </td>
+                                        <td class="px-6 py-3 text-right">
+                                            <button onclick='editResponsavel({{ r|tojson }})' class="font-medium text-blue-600 hover:text-blue-800">Editar</button>
+                                            <form action="{{ url_for('main.excluir_responsavel', id=r.get('id')) }}" method="POST" onsubmit="return confirm('Tem certeza?');" class="inline ml-2">
+                                                <button type="submit" class="font-medium text-red-600 hover:text-red-800">Excluir</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                            {% else %}
+                            <p class="text-center p-10 text-slate-400">Nenhum responsável cadastrado.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Aba de Times -->
@@ -103,13 +178,69 @@
 
             <!-- Aba de Feriados -->
             <div id="tab-feriados" class="tab-content">
-                <!-- ... (código da aba de feriados) ... -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="space-y-8">
+                        <div class="bg-gray-50 p-6 rounded-xl border">
+                            <h2 class="font-bold text-lg mb-4">Adicionar Data Manual</h2>
+                            <form action="{{ url_for('main.adicionar_feriado') }}" method="POST" class="flex gap-2">
+                                <input type="date" name="data_feriado" required class="flex-1 input-field">
+                                <button type="submit" class="btn-primary">Adicionar</button>
+                            </form>
+                        </div>
+                        <div class="bg-gray-50 p-6 rounded-xl border">
+                            <h2 class="font-bold text-lg mb-4">Importar Lista (CSV)</h2>
+                            <form action="{{ url_for('main.importar_feriados_csv') }}" method="POST" enctype="multipart/form-data" class="space-y-3">
+                                <input type="file" name="arquivo_csv" accept=".csv" required class="input-file">
+                                <button type="submit" class="w-full btn-secondary">Carregar Arquivo</button>
+                            </form>
+                        </div>
+                        <div class="bg-gray-50 p-6 rounded-xl border">
+                            <h2 class="font-bold text-lg mb-4">Configurações de Dias</h2>
+                            <form action="{{ url_for('main.salvar_configuracoes_dias') }}" method="POST">
+                                <label class="flex items-center gap-3">
+                                    <input type="checkbox" name="block_weekends" class="h-5 w-5 rounded text-blue-600 focus:ring-blue-500" {% if settings.block_weekends %}checked{% endif %}>
+                                    <span class="text-sm font-medium text-slate-700">Bloquear fins de semana (Sáb/Dom)</span>
+                                </label>
+                                <button type="submit" class="btn-primary mt-4">Salvar Configurações</button>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="bg-white border rounded-xl overflow-hidden flex flex-col h-[500px]">
+                        <div class="bg-gray-100 px-6 py-3 border-b"><span class="font-bold text-slate-700">Datas Bloqueadas ({{ feriados|length }})</span></div>
+                        <div class="overflow-y-auto flex-1">
+                            {% if feriados %}
+                            <table class="w-full text-sm">
+                                <tbody class="divide-y divide-gray-100">
+                                    {% for data in feriados %}
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="px-6 py-3 font-mono">{{ data }}</td>
+                                        <td class="px-6 py-3 text-right">
+                                            <form action="{{ url_for('main.excluir_feriado') }}" method="POST"><input type="hidden" name="data" value="{{ data }}"><button type="submit" class="font-bold text-red-500 hover:text-red-700">&times;</button></form>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                            {% else %}
+                            <p class="text-center p-10 text-slate-400">Nenhuma data customizada.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        // ... (código javascript existente) ...
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active', 'border-blue-600', 'text-blue-600'));
+            const activeBtn = document.querySelector(`button[onclick="switchTab('${tabName}')"]`);
+            activeBtn.classList.add('active', 'border-blue-600', 'text-blue-600');
+        }
+
+        document.addEventListener('DOMContentLoaded', () => switchTab('responsaveis'));
 
         function editTime(time) {
             document.getElementById('form-title-time').innerText = 'Editar Time';
@@ -136,6 +267,60 @@
             document.getElementById('form-time').action = "{{ url_for('main.adicionar_time') }}";
             document.getElementById('btn-submit-time').innerText = 'Adicionar';
             document.getElementById('btn-cancel-time').classList.add('hidden');
+        }
+
+        function addFeriasPeriodo(inicio = '', fim = '') {
+            const container = document.getElementById('ferias-container');
+            const div = document.createElement('div');
+            div.className = 'flex items-center gap-2';
+            div.innerHTML = `
+                <input type="date" value="${inicio}" class="w-full input-field ferias-inicio">
+                <span class="text-slate-500">-</span>
+                <input type="date" value="${fim}" class="w-full input-field ferias-fim">
+                <button type="button" onclick="this.parentElement.remove()" class="text-red-500 hover:text-red-700">&times;</button>
+            `;
+            container.appendChild(div);
+        }
+
+        document.getElementById('form-responsavel').addEventListener('submit', function(e) {
+            const ferias = [];
+            document.querySelectorAll('#ferias-container > div').forEach(div => {
+                const inicio = div.querySelector('.ferias-inicio').value;
+                const fim = div.querySelector('.ferias-fim').value;
+                if (inicio && fim) {
+                    ferias.push({ inicio, fim });
+                }
+            });
+            document.getElementById('ferias-json').value = JSON.stringify(ferias);
+        });
+
+        function editResponsavel(r) {
+            document.getElementById('form-title').innerText = 'Editar Responsável';
+            document.getElementById('responsavel-id').value = r.id;
+            document.getElementById('nome').value = r.nome;
+            document.getElementById('email').value = r.email;
+            document.getElementById('modelo_trabalho').value = r.modelo_trabalho;
+            document.getElementById('horas_semanais').value = r.horas_semanais;
+
+            const feriasContainer = document.getElementById('ferias-container');
+            feriasContainer.innerHTML = '';
+            if (r.ferias) {
+                r.ferias.forEach(p => addFeriasPeriodo(p.inicio, p.fim));
+            }
+
+            document.getElementById('form-responsavel').action = `/responsaveis/editar/${r.id}`;
+            document.getElementById('btn-submit').innerText = 'Salvar Alterações';
+            document.getElementById('btn-cancel').classList.remove('hidden');
+        }
+
+        function resetForm() {
+            document.getElementById('form-title').innerText = 'Adicionar Novo Responsável';
+            document.getElementById('form-responsavel').reset();
+            document.getElementById('responsavel-id').value = '';
+            document.getElementById('ferias-container').innerHTML = '';
+            document.getElementById('form-responsavel').action = "{{ url_for('main.adicionar_responsavel') }}";
+            document.getElementById('btn-submit').innerText = 'Adicionar';
+            document.getElementById('btn-cancel').classList.add('hidden');
         }
     </script>
 

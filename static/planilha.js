@@ -260,8 +260,11 @@ function ordenar(campo, tipo) {
         th.classList.remove('active-sort');
         th.querySelector('.sort-icon').innerText = '⇅';
     });
-    event.currentTarget.classList.add('active-sort');
-    event.currentTarget.querySelector('.sort-icon').innerText = direcao === 'asc' ? '⬆' : '⬇';
+    const evt = window.event;
+    if (evt && evt.currentTarget) {
+        evt.currentTarget.classList.add('active-sort');
+        evt.currentTarget.querySelector('.sort-icon').innerText = direcao === 'asc' ? '⬆' : '⬇';
+    }
     const tasks = getTasksFromTable();
     tasks.sort((a, b) => {
         const valA = a[campo] || '', valB = b[campo] || '';

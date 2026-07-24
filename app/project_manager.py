@@ -60,6 +60,12 @@ def carregar_projetos():
         cur.execute("SELECT id, nome FROM projetos ORDER BY nome")
         return [dict(row) for row in cur.fetchall()]
 
+def carregar_projeto_por_id(project_id):
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM projetos WHERE id = %s", (project_id,))
+        return dict(cur.fetchone()) if cur.rowcount > 0 else None
+
 def criar_projeto_db(project_id, nome):
     db = database.get_db()
     with db.cursor() as cur:
@@ -191,4 +197,72 @@ def salvar_kanban_config(project_id, config_data):
                 "INSERT INTO kanban_colunas (projeto_id, coluna_id, nome, tipo, ordem) VALUES (%s, %s, %s, %s, %s)",
                 (project_id, col['id'], col['nome'], col['tipo'], i)
             )
+    db.commit()
+
+def carregar_times():
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM times ORDER BY nome")
+        return [dict(row) for row in cur.fetchall()]
+
+def associar_time_projeto(project_id, time_id):
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("UPDATE projetos SET time_id = %s WHERE id = %s", (time_id if time_id else None, project_id))
+    db.commit()
+
+def mover_card_kanban(project_id, card_id, coluna_destino_id):
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM kanban_colunas WHERE projeto_id = %s", (project_id,))
+        mapa_colunas = {col['coluna_id']: dict(col) for col in cur.fetchall()}
+        col_dest = mapa_colunas.get(coluna_destino_id, {})
+        tipo_dest = col_dest.get('tipo')
+        update_fields = {"kanban_coluna_id": coluna_destino_id}
+        if tipo_dest == 'inicio':
+            update_fields['inicio'] = datetime.now().strftime('%Y-%m-%d')
+        elif tipo_dest == 'fim':
+            update_fields['fim'] = datetime.now().strftime('%Y-%m-%d')
+            update_fields['conclusao'] = 100
+        set_clause = ", ".join([f"{key} = %s" for key in update_fields.keys()])
+        params = list(update_fields.values()) + [project_id, card_id]
+        cur.execute(f"UPDATE tarefas SET {set_clause} WHERE projeto_id = %s AND id = %s", params)
+    db.commit()
+
+def adicionar_tarefa(project_id, dados):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM tarefas WHERE projeto_id = %s", (project_id,))
+        next_id = cur.fetchone()[0]
+        cur.execute(
+            """
+            INSERT INTO tarefas (id, projeto_id, fase, modulo, tarefa, subtarefa, dias, predecessora_id, conclusao, responsavel_id, baseline_inicio, baseline_fim, inicio, fim, kanban_coluna_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (next_id, project_id, dados.get('fase'), dados.get('modulo'), dados.get('tarefa'), dados.get('subtarefa'), dados.get('dias'), dados.get('predecessora_id'), dados.get('conclusao'), dados.get('responsavel_id'), dados.get('baseline_inicio'), dados.get('baseline_fim'), dados.get('inicio'), dados.get('fim'), dados.get('kanban_coluna_id'))
+        )
+    db.commit()
+
+def adicionar_time(dados):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("INSERT INTO times (nome) VALUES (%s) RETURNING id", (dados['nome'],))
+        time_id = cur.fetchone()[0]
+        for membro_id in dados.get('membros', []):
+            cur.execute("INSERT INTO responsaveis_times (responsavel_id, time_id) VALUES (%s, %s)", (membro_id, time_id))
+    db.commit()
+
+def editar_time(id, dados):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("UPDATE times SET nome = %s WHERE id = %s", (dados['nome'], id))
+        cur.execute("DELETE FROM responsaveis_times WHERE time_id = %s", (id,))
+        for membro_id in dados.get('membros', []):
+            cur.execute("INSERT INTO responsaveis_times (responsavel_id, time_id) VALUES (%s, %s)", (membro_id, id))
+    db.commit()
+
+def excluir_time(id):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM times WHERE id = %s", (id,))
     db.commit()

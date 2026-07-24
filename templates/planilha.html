@@ -43,7 +43,83 @@
     </header>
 
     <div class="flex-1 overflow-hidden p-6 flex flex-col">
-        <!-- ... (o resto do arquivo permanece o mesmo) ... -->
+        <div class="flex-1 overflow-auto border border-gray-200 rounded-xl bg-white shadow-sm">
+            <table class="w-full border-collapse" id="planilha-table">
+                <thead id="header-row">
+                    <tr>
+                        <th class="p-0 w-10 text-center no-drag no-print"><span class="px-2">⋮⋮</span></th>
+                        <th class="p-0 w-14 text-center sortable" onclick="ordenar('id', 'numero')">ID <span class="sort-icon">⇅</span></th>
+                        <th class="p-0 sortable" onclick="ordenar('fase', 'texto')">Fase <span class="sort-icon">⇅</span></th>
+                        <th class="p-0 sortable" onclick="ordenar('tarefa', 'texto')">Tarefa <span class="sort-icon">⇅</span></th>
+                        <th class="p-0 sortable" onclick="ordenar('subtarefa', 'texto')">Subtarefa <span class="sort-icon">⇅</span></th>
+                        <th class="p-0 w-36 text-center draggable-col bg-blue-50/50">Baseline Início</th>
+                        <th class="p-0 w-20 text-center sortable" onclick="ordenar('dias', 'numero')">Dias <span class="sort-icon">⇅</span></th>
+                        <th class="p-0 w-36 text-center bg-blue-50/50">Baseline Fim</th>
+                        <th class="p-0 w-24 text-center sortable" onclick="ordenar('predecessora', 'texto')">Predeces. <span class="sort-icon">⇅</span></th>
+                        <th class="p-0 w-36 text-center bg-amber-50/50">Início</th>
+                        <th class="p-0 w-36 text-center bg-amber-50/50">Fim</th>
+                        <th class="p-0 w-44 sortable" onclick="ordenar('responsavel_id', 'texto')">Responsável <span class="sort-icon">⇅</span></th>
+                        <th class="p-0 w-24 text-center sortable" onclick="ordenar('conclusao', 'numero')">% <span class="sort-icon">⇅</span></th>
+                        <th class="p-0 w-10 text-center no-print">✕</th>
+                    </tr>
+                </thead>
+                <tbody id="tabela-corpo">
+                    {% for t in tarefas %}
+                    <tr class="group transition-colors" data-id="{{ t.id }}">
+                        <td class="p-0 align-middle text-center handle border-r no-print">
+                            <div class="h-full flex items-center justify-center cursor-grab">⋮⋮</div>
+                        </td>
+                        <td class="p-0 text-center text-xs font-mono border-r">{{ t.id }}</td>
+                        <td class="p-0 border-r">
+                            <input name="fase" value="{{ t.fase or '' }}" class="sheet-input" oninput="detectarMudanca()">
+                        </td>
+                        <td class="p-0 border-r">
+                            <input name="tarefa" value="{{ t.tarefa or 'Nova Tarefa' }}" class="sheet-input" oninput="detectarMudanca()">
+                        </td>
+                        <td class="p-0 border-r">
+                            <input name="subtarefa" value="{{ t.subtarefa or '' }}" class="sheet-input" oninput="detectarMudanca()">
+                        </td>
+                        <td class="p-0 border-r bg-blue-50/30">
+                            <input type="date" name="baseline_inicio" value="{{ t.baseline_inicio or '' }}" class="sheet-input text-center" oninput="confirmarAlteracaoPrevisao(event)">
+                        </td>
+                        <td class="p-0 border-r">
+                            <input type="number" name="dias" value="{{ t.dias or 1 }}" class="sheet-input text-center" oninput="detectarMudanca(true)">
+                        </td>
+                        <td class="p-0 border-r bg-blue-50/30">
+                            <input type="date" name="baseline_fim" value="{{ t.baseline_fim or '' }}" class="sheet-input text-center" readonly>
+                        </td>
+                        <td class="p-0 border-r">
+                            <input name="predecessora" value="{{ t.predecessora or '' }}" class="sheet-input text-center" oninput="detectarMudanca(true)">
+                        </td>
+                        <td class="p-0 border-r bg-amber-50/30 relative">
+                            <input type="date" name="inicio" value="{{ t.inicio or '' }}" class="sheet-input text-center" oninput="detectarMudanca(true)">
+                            <span class="date-alert-icon hidden" title="Conflito com férias!">⚠️</span>
+                        </td>
+                        <td class="p-0 border-r bg-amber-50/30 relative">
+                            <input type="date" name="fim" value="{{ t.fim or '' }}" class="sheet-input text-center" oninput="detectarMudanca(true)">
+                            <span class="date-alert-icon hidden" title="Conflito com férias!">⚠️</span>
+                        </td>
+                        <td class="p-0 border-r">
+                            <select name="responsavel" class="sheet-input" oninput="detectarMudanca(true)">
+                                <option value="">Nenhum</option>
+                                {% for r in responsaveis %}
+                                <option value="{{ r.id }}" {% if t.responsavel_id|string == r.id|string %}selected{% endif %}>{{ r.nome }}</option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                        <td class="p-0 border-r relative">
+                            <div class="progress-bar" style="width: {{ t.conclusao or 0 }}%;"></div>
+                            <input type="number" name="conclusao" value="{{ t.conclusao or 0 }}" class="sheet-input text-center" oninput="handleConclusionChange(this)">
+                        </td>
+                        <td class="p-0 text-center no-print">
+                            <button onclick="this.closest('tr').remove(); detectarMudanca(true)" class="w-full h-full text-gray-300 hover:text-red-500">✕</button>
+                            <input type="hidden" name="modulo" value="{{ t.modulo or '' }}">
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <script>
