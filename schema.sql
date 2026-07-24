@@ -1,15 +1,28 @@
 -- =============================================================================
--- SCRIPT DE CRIAÇÃO DE TABELAS PARA O PROJETOPRO NO POSTGRESQL
+-- SCRIPT DE CRIAÇÃO DE TABELAS PARA O PROJETOPRO NO POSTGRESQL (VERSÃO 2.0)
+-- Este script consolida todas as entidades da aplicação, incluindo a gestão
+-- de times e a relação muitos-para-muitos com os responsáveis.
 -- =============================================================================
 
--- Habilita a extensão para usar UUIDs, ideal para chaves primárias únicas.
+-- Garante que a extensão para UUIDs esteja disponível.
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- -----------------------------------------------------------------------------
+-- Tabela de Times
+-- Armazena as equipes que podem ser associadas a projetos.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS times (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    nome VARCHAR(255) NOT NULL UNIQUE
+);
+
+COMMENT ON TABLE times IS 'Cadastro das equipes de trabalho.';
 
 -- -----------------------------------------------------------------------------
 -- Tabela de Responsáveis (Usuários)
 -- Armazena as informações de cada pessoa que pode ser designada para uma tarefa.
 -- -----------------------------------------------------------------------------
-CREATE TABLE responsaveis (
+CREATE TABLE IF NOT EXISTS responsaveis (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     nome VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
@@ -19,14 +32,24 @@ CREATE TABLE responsaveis (
 );
 
 COMMENT ON TABLE responsaveis IS 'Cadastro dos responsáveis pelas tarefas.';
-COMMENT ON COLUMN responsaveis.id IS 'Identificador único universal para cada responsável.';
-COMMENT ON COLUMN responsaveis.modelo_trabalho IS 'Ex: Home Office, Híbrido, Alocado.';
+
+-- -----------------------------------------------------------------------------
+-- Tabela de Associação: Responsáveis <-> Times (Muitos para Muitos)
+-- Define quais responsáveis pertencem a quais times.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS responsaveis_times (
+    responsavel_id UUID NOT NULL REFERENCES responsaveis(id) ON DELETE CASCADE,
+    time_id UUID NOT NULL REFERENCES times(id) ON DELETE CASCADE,
+    PRIMARY KEY (responsavel_id, time_id)
+);
+
+COMMENT ON TABLE responsaveis_times IS 'Tabela de junção para a relação N:M entre responsáveis e times.';
 
 -- -----------------------------------------------------------------------------
 -- Tabela de Férias
 -- Permite que cada responsável tenha múltiplos períodos de férias.
 -- -----------------------------------------------------------------------------
-CREATE TABLE ferias (
+CREATE TABLE IF NOT EXISTS ferias (
     id SERIAL PRIMARY KEY,
     responsavel_id UUID NOT NULL REFERENCES responsaveis(id) ON DELETE CASCADE,
     inicio DATE NOT NULL,
@@ -35,95 +58,82 @@ CREATE TABLE ferias (
 );
 
 COMMENT ON TABLE ferias IS 'Armazena os períodos de férias de cada responsável.';
-COMMENT ON COLUMN ferias.responsavel_id IS 'Chave estrangeira para a tabela de responsáveis.';
 
 -- -----------------------------------------------------------------------------
--- Tabela de Projetos
+-- Tabela de Projetos (com vínculo ao time)
 -- Centraliza todos os projetos existentes.
 -- -----------------------------------------------------------------------------
-CREATE TABLE projetos (
+CREATE TABLE IF NOT EXISTS projetos (
     id VARCHAR(255) PRIMARY KEY,
     nome VARCHAR(255) NOT NULL,
+    time_id UUID REFERENCES times(id) ON DELETE SET NULL, -- Vínculo com o time
     criado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-COMMENT ON TABLE projetos IS 'Cadastro de todos os projetos.';
-COMMENT ON COLUMN projetos.id IS 'ID do projeto, derivado do nome (ex: "meu-projeto-novo").';
+COMMENT ON TABLE projetos IS 'Cadastro de todos os projetos, com vínculo opcional a um time.';
 
 -- -----------------------------------------------------------------------------
 -- Tabela de Tarefas
 -- A tabela principal que armazena todas as tarefas de todos os projetos.
 -- -----------------------------------------------------------------------------
-CREATE TABLE tarefas (
-    id SERIAL PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS tarefas (
+    pk_id SERIAL PRIMARY KEY,
+    id INTEGER NOT NULL,
     projeto_id VARCHAR(255) NOT NULL REFERENCES projetos(id) ON DELETE CASCADE,
     fase VARCHAR(255),
     modulo VARCHAR(255),
     tarefa VARCHAR(255),
     subtarefa VARCHAR(255),
     dias INTEGER DEFAULT 1,
-    predecessora_id INTEGER REFERENCES tarefas(id) ON DELETE SET NULL,
+    predecessora_id INTEGER,
     conclusao INTEGER DEFAULT 0,
     responsavel_id UUID REFERENCES responsaveis(id) ON DELETE SET NULL,
-
-    -- Datas de Previsão (Planejamento Original)
     baseline_inicio DATE,
     baseline_fim DATE,
-
-    -- Datas de Execução (Real)
     inicio DATE,
     fim DATE,
-
-    kanban_coluna_id VARCHAR(255)
+    kanban_coluna_id VARCHAR(255),
+    UNIQUE(projeto_id, id)
 );
 
-CREATE INDEX idx_tarefas_projeto ON tarefas(projeto_id);
-CREATE INDEX idx_tarefas_responsavel ON tarefas(responsavel_id);
+CREATE INDEX IF NOT EXISTS idx_tarefas_projeto ON tarefas(projeto_id);
+CREATE INDEX IF NOT EXISTS idx_tarefas_responsavel ON tarefas(responsavel_id);
 
-COMMENT ON TABLE tarefas IS 'Armazena todas as tarefas de todos os projetos.';
-COMMENT ON COLUMN tarefas.predecessora_id IS 'Referência a outra tarefa neste mesmo projeto.';
-COMMENT ON COLUMN tarefas.baseline_inicio IS 'Data de início PREVISTA no planejamento.';
-COMMENT ON COLUMN tarefas.inicio IS 'Data em que a tarefa REALMENTE começou.';
+COMMENT ON COLUMN tarefas.pk_id IS 'Chave primária real, auto-incrementada e interna.';
+COMMENT ON COLUMN tarefas.id IS 'ID de exibição para o usuário (sequencial por projeto).';
+COMMENT ON COLUMN tarefas.predecessora_id IS 'Refere-se ao ID de exibição da tarefa predecessora dentro do mesmo projeto.';
 
 -- -----------------------------------------------------------------------------
 -- Tabela de Colunas do Kanban
 -- Configuração das colunas para cada projeto.
 -- -----------------------------------------------------------------------------
-CREATE TABLE kanban_colunas (
+CREATE TABLE IF NOT EXISTS kanban_colunas (
     id SERIAL PRIMARY KEY,
     projeto_id VARCHAR(255) NOT NULL REFERENCES projetos(id) ON DELETE CASCADE,
-    coluna_id VARCHAR(255) NOT NULL, -- Ex: "backlog", "em_andamento"
+    coluna_id VARCHAR(255) NOT NULL,
     nome VARCHAR(255) NOT NULL,
-    tipo VARCHAR(50) NOT NULL, -- Ex: "inicio", "meio", "fim"
+    tipo VARCHAR(50) NOT NULL,
     ordem INTEGER NOT NULL,
     UNIQUE(projeto_id, coluna_id)
 );
 
-COMMENT ON TABLE kanban_colunas IS 'Configuração das colunas do Kanban para cada projeto.';
-
 -- -----------------------------------------------------------------------------
 -- Tabela de Configurações Globais
--- Armazena configurações gerais da aplicação.
 -- -----------------------------------------------------------------------------
-CREATE TABLE configuracoes (
+CREATE TABLE IF NOT EXISTS configuracoes (
     chave VARCHAR(255) PRIMARY KEY,
     valor VARCHAR(255) NOT NULL
 );
 
-INSERT INTO configuracoes (chave, valor) VALUES ('block_weekends', 'true');
-
-COMMENT ON TABLE configuracoes IS 'Configurações globais da aplicação.';
+INSERT INTO configuracoes (chave, valor) VALUES ('block_weekends', 'true') ON CONFLICT (chave) DO NOTHING;
 
 -- -----------------------------------------------------------------------------
 -- Tabela de Feriados Customizados
--- Armazena feriados e bloqueios que não são nacionais.
 -- -----------------------------------------------------------------------------
-CREATE TABLE feriados_customizados (
+CREATE TABLE IF NOT EXISTS feriados_customizados (
     data DATE PRIMARY KEY,
     descricao VARCHAR(255)
 );
-
-COMMENT ON TABLE feriados_customizados IS 'Feriados e datas de bloqueio customizadas.';
 
 -- =============================================================================
 -- FIM DO SCRIPT

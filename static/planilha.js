@@ -119,19 +119,19 @@ function handleConclusionChange(input) {
 
 function verificarConflitosDeFerias() {
     const mapaResponsaveis = responsaveis.reduce((map, r) => {
-        map[r.nome] = r.ferias || [];
+        map[r.id] = r.ferias || [];
         return map;
     }, {});
 
     tbody.querySelectorAll('tr').forEach(tr => {
-        const responsavelNome = tr.querySelector('[name="responsavel"]').value;
-        const ferias = mapaResponsaveis[responsavelNome] || [];
+        const responsavelId = tr.querySelector('[name="responsavel"]').value;
+        const ferias = mapaResponsaveis[responsavelId] || [];
 
         const inicioTarefa = new Date(tr.querySelector('[name="inicio"]').value);
         const fimTarefa = new Date(tr.querySelector('[name="fim"]').value);
 
         let conflito = false;
-        if (responsavelNome && !isNaN(inicioTarefa) && !isNaN(fimTarefa)) {
+        if (responsavelId && !isNaN(inicioTarefa) && !isNaN(fimTarefa)) {
             for (const periodo of ferias) {
                 const inicioFerias = new Date(periodo.inicio);
                 const fimFerias = new Date(periodo.fim);
@@ -168,7 +168,7 @@ function getTasksFromTable() {
             id: tr.dataset.id, fase: get('fase'), modulo: get('modulo'), tarefa: get('tarefa'),
             subtarefa: get('subtarefa'), inicio: get('inicio'), dias: get('dias'), fim: get('fim'),
             predecessora: get('predecessora'), baseline_inicio: get('baseline_inicio'),
-            baseline_fim: get('baseline_fim'), responsavel: get('responsavel'), conclusao: get('conclusao')
+            baseline_fim: get('baseline_fim'), responsavel_id: get('responsavel'), conclusao: get('conclusao')
         };
     });
 }
@@ -201,7 +201,7 @@ function adicionarLinhaVazia() {
 
 function createTaskRowHtml(t) {
     const responsaveisOptions = responsaveis.map(r =>
-        `<option value="${r.nome}" ${r.nome === t.responsavel ? 'selected' : ''}>${r.nome}</option>`
+        `<option value="${r.id}" ${r.id === t.responsavel_id ? 'selected' : ''}>${r.nome}</option>`
     ).join('');
 
     return `
