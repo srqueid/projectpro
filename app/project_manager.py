@@ -89,12 +89,31 @@ def salvar_tarefas(project_id, tarefas):
     with db.cursor() as cur:
         cur.execute("DELETE FROM tarefas WHERE projeto_id = %s", (project_id,))
         for t in tarefas:
+            try:
+                task_id = int(t['id']) if t.get('id') not in (None, '') else None
+            except (ValueError, TypeError):
+                task_id = None
+
+            predecessora = t.get('predecessora')
+            if predecessora == '' or predecessora is None:
+                predecessora = None
+            else:
+                try:
+                    predecessora = int(predecessora)
+                except (ValueError, TypeError):
+                    predecessora = None
+
+            responsavel_id = t.get('responsavel_id')
+            if responsavel_id == '' or responsavel_id is None:
+                responsavel_id = None
+
+            print(f"Inserindo tarefa id={task_id} predecessor={predecessora} responsavel={responsavel_id}")
             cur.execute(
                 """
                 INSERT INTO tarefas (id, projeto_id, fase, modulo, tarefa, subtarefa, dias, predecessora_id, conclusao, responsavel_id, baseline_inicio, baseline_fim, inicio, fim, kanban_coluna_id)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (t.get('id'), project_id, t.get('fase'), t.get('modulo'), t.get('tarefa'), t.get('subtarefa'), t.get('dias'), t.get('predecessora'), t.get('conclusao'), t.get('responsavel_id'), t.get('baseline_inicio'), t.get('baseline_fim'), t.get('inicio'), t.get('fim'), t.get('kanban_coluna_id'))
+                (task_id, project_id, t.get('fase'), t.get('modulo'), t.get('tarefa'), t.get('subtarefa'), int(t.get('dias') or 0), predecessora, int(t.get('conclusao') or 0), responsavel_id, t.get('baseline_inicio'), t.get('baseline_fim'), t.get('inicio'), t.get('fim'), t.get('kanban_coluna_id'))
             )
     db.commit()
 
@@ -103,11 +122,11 @@ def recalcular_datas_cascata(tarefas):
     mapa_tarefas = {str(t['id']): t for t in tarefas}
     feriados_custom = carregar_feriados_custom()
     responsaveis = carregar_responsaveis()
-    mapa_responsaveis = {r['nome']: r for r in responsaveis}
+    mapa_responsaveis = {r['id']: r for r in responsaveis}
     settings = carregar_settings()
 
     for t in tarefas:
-        responsavel_nome = t.get('responsavel')
+        responsavel_nome = t.get('responsavel_id')
         ferias = mapa_responsaveis.get(responsavel_nome, {}).get('ferias', [])
         baseline_inicio_str = t.get('baseline_inicio')
         dias = int(t.get('dias') or 0)
@@ -125,7 +144,7 @@ def recalcular_datas_cascata(tarefas):
         loops += 1
         for t in tarefas:
             if int(t.get('conclusao', 0)) == 100: continue
-            responsavel_nome = t.get('responsavel')
+            responsavel_nome = t.get('responsavel_id')
             ferias = mapa_responsaveis.get(responsavel_nome, {}).get('ferias', [])
             dias = int(t.get('dias') or 0)
             pred_id = str(t.get('predecessora')).lower().strip()

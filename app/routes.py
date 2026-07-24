@@ -4,6 +4,7 @@ import io
 import pandas as pd
 import uuid
 import json
+import traceback
 from flask import (
     Blueprint, render_template, request, redirect, url_for, send_file, jsonify
 )
@@ -206,21 +207,29 @@ def cronograma(project_id):
 
 @main_bp.route('/projeto/<project_id>/salvar', methods=['POST'])
 def salvar_lote(project_id):
-    novos_dados = request.get_json()
-    if novos_dados:
-        dados_calculados = project_manager.recalcular_datas_cascata(novos_dados)
-        project_manager.salvar_tarefas(project_id, dados_calculados)
-        return jsonify({"status": "sucesso"}), 200
-    return jsonify({"status": "erro", "mensagem": "Nenhum dado recebido"}), 400
+    try:
+        novos_dados = request.get_json()
+        if novos_dados:
+            dados_calculados = project_manager.recalcular_datas_cascata(novos_dados)
+            project_manager.salvar_tarefas(project_id, dados_calculados)
+            return jsonify({"status": "sucesso"}), 200
+        return jsonify({"status": "erro", "mensagem": "Nenhum dado recebido"}), 400
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
 
 @main_bp.route('/projeto/<project_id>/recalcular_rapido', methods=['POST'])
 def recalcular_rapido(project_id):
-    novos_dados = request.get_json()
-    if novos_dados:
-        dados_calculados = project_manager.recalcular_datas_cascata(novos_dados)
-        resultado = [{'id': item['id'], 'inicio': item.get('inicio', ''), 'fim': item.get('fim', ''), 'baseline_fim': item.get('baseline_fim', '')} for item in dados_calculados]
-        return jsonify({"status": "sucesso", "dados": resultado}), 200
-    return jsonify({"status": "erro", "mensagem": "Nenhum dado recebido"}), 400
+    try:
+        novos_dados = request.get_json()
+        if novos_dados:
+            dados_calculados = project_manager.recalcular_datas_cascata(novos_dados)
+            resultado = [{'id': item['id'], 'inicio': item.get('inicio', ''), 'fim': item.get('fim', ''), 'baseline_fim': item.get('baseline_fim', '')} for item in dados_calculados]
+            return jsonify({"status": "sucesso", "dados": resultado}), 200
+        return jsonify({"status": "erro", "mensagem": "Nenhum dado recebido"}), 400
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
 
 @main_bp.route('/projeto/<project_id>/kanban_mover_card', methods=['POST'])
 def kanban_mover_card(project_id):

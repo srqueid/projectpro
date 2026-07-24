@@ -78,10 +78,14 @@ async function salvarTudo(addToUndo = true) {
             body: JSON.stringify(tasks)
         });
         if (response.ok) setStatus('Salvo', 'text-emerald-600');
-        else throw new Error('Falha ao salvar');
+        else {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.mensagem || `Falha ao salvar (HTTP ${response.status})`);
+        }
     } catch (e) {
         console.error("Erro ao salvar:", e);
         setStatus('Erro!', 'text-red-600');
+        alert(e.message);
     }
 }
 
@@ -163,7 +167,12 @@ function verificarConflitosDeFerias() {
 
 function getTasksFromTable() {
     return Array.from(tbody.querySelectorAll('tr')).map(tr => {
-        const get = (name) => tr.querySelector(`[name="${name}"]`)?.value || "";
+        const get = (name) => {
+            const el = tr.querySelector(`[name="${name}"]`);
+            if (!el) return null;
+            const v = el.value;
+            return v === '' ? null : v;
+        };
         return {
             id: tr.dataset.id, fase: get('fase'), modulo: get('modulo'), tarefa: get('tarefa'),
             subtarefa: get('subtarefa'), inicio: get('inicio'), dias: get('dias'), fim: get('fim'),
