@@ -6,10 +6,37 @@
 {% endblock %}
 
 {% block content %}
-    <!-- ... (cabeçalho) ... -->
+    <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0 shadow-sm z-10 no-print">
+        <div>
+            <h1 class="text-lg font-bold text-slate-800">Kanban</h1>
+            <p class="text-xs text-slate-500">{{ project_id }}</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <button onclick="abrirModalNovaTarefa('backlog')" class="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow">
+                <span>+</span> Nova Tarefa
+            </button>
+        </div>
+    </header>
 
     <div class="flex-1 overflow-hidden p-6 flex flex-col">
-        <!-- ... (estatísticas) ... -->
+        <div class="grid grid-cols-4 gap-4 mb-4 shrink-0 no-print-cards">
+            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                <div class="w-12 h-12 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-lg">#</div>
+                <div><p class="text-2xl font-bold text-slate-800">{{ stats.total }}</p><p class="text-xs text-slate-500 font-medium">Tarefas</p></div>
+            </div>
+            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                <div class="w-12 h-12 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-lg">✓</div>
+                <div><p class="text-2xl font-bold text-slate-800">{{ stats.completed }}</p><p class="text-xs text-slate-500 font-medium">Concluídas</p></div>
+            </div>
+            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                <div class="w-12 h-12 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center font-bold text-lg">⟳</div>
+                <div><p class="text-2xl font-bold text-slate-800">{{ stats.in_progress }}</p><p class="text-xs text-slate-500 font-medium">Andamento</p></div>
+            </div>
+            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                <div class="w-12 h-12 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center font-bold text-lg">%</div>
+                <div><p class="text-2xl font-bold text-slate-800">{{ stats.avg }}%</p><p class="text-xs text-slate-500 font-medium">Média</p></div>
+            </div>
+        </div>
 
         <div class="kanban-board" id="kanban-board">
             {% for col in colunas %}
@@ -23,7 +50,28 @@
                 </div>
                 <div class="kanban-column-body" data-col-id="{{ col.id }}">
                     {% for t in cards_por_coluna[col.id] %}
-                    <!-- ... (card da tarefa) ... -->
+                    <div class="kanban-card" data-id="{{ t.id }}" draggable="true">
+                        <span class="card-id">#{{ t.id }}</span>
+                        <div class="card-title">{{ t.tarefa or t.subtarefa or 'Sem nome' }}</div>
+                        {% if t.fase or t.modulo %}
+                        <div class="card-sub">{{ t.fase or '' }}{% if t.fase and t.modulo %} / {% endif %}{{ t.modulo or '' }}</div>
+                        {% endif %}
+                        <div class="card-meta">
+                            {% if t.responsavel_id %}
+                            <span class="resp">{{ t.responsavel_id }}</span>
+                            {% endif %}
+                            <span class="fase-tag">{{ t.conclusao or 0 }}%</span>
+                        </div>
+                        {% if t.inicio or t.fim %}
+                        <div class="card-dates">
+                            {% if t.inicio %}<span>📅 {{ t.inicio }}</span>{% endif %}
+                            {% if t.fim %}<span>🏁 {{ t.fim }}</span>{% endif %}
+                        </div>
+                        {% endif %}
+                        <div class="card-progress">
+                            <div class="card-progress-bar bar-{{ t.conclusao|int // 25 * 25 or 0 }}" style="width: {{ t.conclusao or 0 }}%"></div>
+                        </div>
+                    </div>
                     {% endfor %}
                 </div>
             </div>
@@ -49,5 +97,8 @@
         </div>
     </dialog>
 
-    <!-- ... (outras modais e scripts) ... -->
+    <script id="kanban-config" type="text/javascript">
+        const projectId = "{{ project_id }}";
+    </script>
+    <script src="{{ url_for('static', filename='kanban.js') }}"></script>
 {% endblock %}

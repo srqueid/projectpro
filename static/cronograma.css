@@ -9,15 +9,36 @@
 
 /* Estilo para a barra de baseline */
 .gantt-bar-baseline .bar {
-    fill: #cbd5e1 !important; /* Cinza mais claro */
+    fill: #3b82f6 !important;
     height: 10px !important;
-    transform: translateY(10px); /* Desloca para baixo */
+    transform: translateY(10px);
 }
 .gantt-bar-baseline .bar-progress {
-    fill: #94a3b8 !important; /* Cinza um pouco mais escuro */
+    fill: #2563eb !important;
 }
 .gantt-bar-baseline .bar-label {
-    display: none; /* Oculta o rótulo da baseline */
+    display: none;
+}
+
+.gantt-bar-execucao .bar {
+    fill: #10b981 !important;
+}
+.gantt-bar-execucao .bar-progress {
+    fill: #059669 !important;
+}
+
+.gantt-bar-atraso-leve .bar {
+    fill: #f59e0b !important;
+}
+.gantt-bar-atraso-leve .bar-progress {
+    fill: #d97706 !important;
+}
+
+.gantt-bar-atraso-grave .bar {
+    fill: #ef4444 !important;
+}
+.gantt-bar-atraso-grave .bar-progress {
+    fill: #b91c1c !important;
 }
 
 /* CORREÇÃO DA BARRA DE ROLAGEM NA BASE */

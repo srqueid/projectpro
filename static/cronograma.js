@@ -18,11 +18,17 @@ function renderGantt(mode, tarefasGantt) {
     try {
         el.innerHTML = '';
         gantt_chart = new Gantt("#gantt-chart", tarefasGantt, {
-            header_height: 60, column_width: 30, step: 24, view_modes: view_modes, bar_height: 28, bar_corner_radius: 6, arrow_curve: 5, padding: 20, view_mode: mode, date_format: 'YYYY-MM-DD', language: 'ptBr',
+            header_height: 60, column_width: 30, step: 24, view_modes: view_modes, bar_height: 28, bar_corner_radius: 6, arrow_curve: 5, padding: 20, view_mode: mode, date_format: 'YYYY-MM-DD',
             custom_popup_html: function(task) {
+                const isBaseline = task.custom_class === 'gantt-bar-baseline';
                 const start = new Date(task.start).toLocaleDateString('pt-BR');
                 const end = new Date(task.end).toLocaleDateString('pt-BR');
-                return `<div class="popup-wrapper"><div class="title">${task.name}</div><div class="subtitle"><strong>De:</strong> ${start} <strong>Até:</strong> ${end}</div><div class="subtitle"><strong>Progresso:</strong> ${task.progress}%</div></div>`;
+                let tipo = 'Execução Real';
+                if (isBaseline) tipo = 'Planejamento';
+                else if (task.custom_class === 'gantt-bar-atraso-grave') tipo = 'Execução (Atraso Grave)';
+                else if (task.custom_class === 'gantt-bar-atraso-leve') tipo = 'Execução (Atraso Leve)';
+                else if (task.custom_class === 'gantt-bar-execucao') tipo = 'Execução (No Prazo)';
+                return `<div class="popup-wrapper"><div class="title">${task.name}</div><div class="subtitle"><strong>Tipo:</strong> ${tipo}</div><div class="subtitle"><strong>De:</strong> ${start} <strong>Até:</strong> ${end}</div><div class="subtitle"><strong>Progresso:</strong> ${task.progress}%</div></div>`;
             }
         });
         atualizarBotoes(mode);

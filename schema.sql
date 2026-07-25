@@ -128,6 +128,17 @@ CREATE TABLE IF NOT EXISTS configuracoes (
 INSERT INTO configuracoes (chave, valor) VALUES ('block_weekends', 'true') ON CONFLICT (chave) DO NOTHING;
 
 -- -----------------------------------------------------------------------------
+-- Tabela de Configurações por Projeto
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS projeto_configuracoes (
+    id SERIAL PRIMARY KEY,
+    projeto_id VARCHAR(255) NOT NULL REFERENCES projetos(id) ON DELETE CASCADE,
+    chave VARCHAR(255) NOT NULL,
+    valor VARCHAR(255) NOT NULL,
+    UNIQUE(projeto_id, chave)
+);
+
+-- -----------------------------------------------------------------------------
 -- Tabela de Feriados Customizados
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS feriados_customizados (

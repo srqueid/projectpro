@@ -94,21 +94,6 @@ function setStatus(text, colorClass) {
     statusDisplay.className = `text-xs font-medium transition-all ${colorClass}`;
 }
 
-function confirmarAlteracaoPrevisao(event) {
-    const confirmou = confirm("Alterar uma data de previsão pode impactar o planejamento. Deseja continuar?");
-    if (confirmou) {
-        detectarMudanca(true);
-    } else {
-        const input = event.target;
-        const id = input.closest('tr').dataset.id;
-        const ultimoEstado = undoStack[undoStack.length - 1];
-        const tarefaOriginal = ultimoEstado.find(t => t.id == id);
-        if (tarefaOriginal) {
-            input.value = tarefaOriginal.baseline_inicio;
-        }
-    }
-}
-
 function handleConclusionChange(input) {
     const tr = input.closest('tr');
     const fimInput = tr.querySelector('[name="fim"]');
@@ -177,7 +162,8 @@ function getTasksFromTable() {
             id: tr.dataset.id, fase: get('fase'), modulo: get('modulo'), tarefa: get('tarefa'),
             subtarefa: get('subtarefa'), inicio: get('inicio'), dias: get('dias'), fim: get('fim'),
             predecessora: get('predecessora'), baseline_inicio: get('baseline_inicio'),
-            baseline_fim: get('baseline_fim'), responsavel_id: get('responsavel'), conclusao: get('conclusao')
+            baseline_fim: get('baseline_fim'), responsavel_id: get('responsavel'), conclusao: get('conclusao'),
+            kanban_coluna_id: get('kanban_coluna_id')
         };
     });
 }
@@ -197,7 +183,7 @@ function renderTable(tasks) {
 function adicionarLinhaVazia() {
     const ids = Array.from(tbody.querySelectorAll('tr')).map(tr => parseInt(tr.dataset.id));
     const novoId = (ids.length > 0 ? Math.max(...ids) : 0) + 1;
-    const novaTarefa = { id: novoId, dias: 1, conclusao: 0 };
+    const novaTarefa = { id: novoId, dias: 1, conclusao: 0, kanban_coluna_id: 'backlog' };
     const row = document.createElement('tr');
     row.className = 'group transition-colors';
     row.dataset.id = novoId;
@@ -219,15 +205,15 @@ function createTaskRowHtml(t) {
         <td class="p-0 border-r"><input name="fase" value="${t.fase || ''}" class="sheet-input" oninput="detectarMudanca()"></td>
         <td class="p-0 border-r"><input name="tarefa" value="${t.tarefa || 'Nova Tarefa'}" class="sheet-input" oninput="detectarMudanca()"></td>
         <td class="p-0 border-r"><input name="subtarefa" value="${t.subtarefa || ''}" class="sheet-input" oninput="detectarMudanca()"></td>
-        <td class="p-0 border-r bg-blue-50/30"><input type="date" name="baseline_inicio" value="${t.baseline_inicio || ''}" class="sheet-input text-center" oninput="confirmarAlteracaoPrevisao(event)"></td>
+        <td class="p-0 border-r bg-blue-50/30"><input type="date" name="baseline_inicio" value="${t.baseline_inicio || ''}" class="sheet-input text-center" oninput="detectarMudanca()"></td>
         <td class="p-0 border-r"><input type="number" name="dias" value="${t.dias || 1}" class="sheet-input text-center" oninput="detectarMudanca(true)"></td>
-        <td class="p-0 border-r bg-blue-50/30"><input type="date" name="baseline_fim" value="${t.baseline_fim || ''}" class="sheet-input text-center" readonly></td>
+        <td class="p-0 border-r bg-blue-50/30"><input type="date" name="baseline_fim" value="${t.baseline_fim || ''}" class="sheet-input text-center" oninput="detectarMudanca()"></td>
         <td class="p-0 border-r"><input name="predecessora" value="${t.predecessora || ''}" class="sheet-input text-center" oninput="detectarMudanca(true)"></td>
         <td class="p-0 border-r bg-amber-50/30 relative"><input type="date" name="inicio" value="${t.inicio || ''}" class="sheet-input text-center" oninput="detectarMudanca(true)"><span class="date-alert-icon hidden" title="Conflito com férias!">⚠️</span></td>
         <td class="p-0 border-r bg-amber-50/30 relative"><input type="date" name="fim" value="${t.fim || ''}" class="sheet-input text-center" oninput="detectarMudanca(true)"><span class="date-alert-icon hidden" title="Conflito com férias!">⚠️</span></td>
         <td class="p-0 border-r"><select name="responsavel" class="sheet-input" oninput="detectarMudanca(true)"><option value="">Nenhum</option>${responsaveisOptions}</select></td>
         <td class="p-0 border-r relative"><div class="progress-bar" style="width: ${t.conclusao || 0}%;"></div><input type="number" name="conclusao" value="${t.conclusao || 0}" class="sheet-input text-center" oninput="handleConclusionChange(this)"></td>
-        <td class="p-0 text-center no-print"><button onclick="this.closest('tr').remove(); detectarMudanca(true)" class="w-full h-full text-gray-300 hover:text-red-500">✕</button><input type="hidden" name="modulo" value="${t.modulo || ''}"></td>
+        <td class="p-0 text-center no-print"><button onclick="this.closest('tr').remove(); detectarMudanca(true)" class="w-full h-full text-gray-300 hover:text-red-500">✕</button><input type="hidden" name="modulo" value="${t.modulo || ''}"><input type="hidden" name="kanban_coluna_id" value="${t.kanban_coluna_id || 'backlog'}"></td>
     `;
 }
 
@@ -248,7 +234,6 @@ async function autoRecalcular() {
                     if (tr) {
                         tr.querySelector('[name="inicio"]').value = item.inicio;
                         tr.querySelector('[name="fim"]').value = item.fim;
-                        tr.querySelector('[name="baseline_fim"]').value = item.baseline_fim;
                     }
                 });
                 detectarMudanca(false);

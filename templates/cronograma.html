@@ -51,7 +51,12 @@
             </div>
 
             <div class="flex-1 flex flex-col min-h-0">
-                <div class="flex flex-wrap gap-4 mb-2 text-xs text-slate-500 no-print" id="legenda-fases"></div>
+                <div class="flex flex-wrap gap-4 mb-2 text-xs text-slate-500 no-print" id="legenda-fases">
+                    <span class="flex items-center gap-2"><span class="w-4 h-2 rounded bg-[#3b82f6] inline-block"></span> Planejamento</span>
+                    <span class="flex items-center gap-2"><span class="w-4 h-2 rounded bg-[#10b981] inline-block"></span> Execução (no prazo)</span>
+                    <span class="flex items-center gap-2"><span class="w-4 h-2 rounded bg-[#f59e0b] inline-block"></span> Atraso leve (até 7d)</span>
+                    <span class="flex items-center gap-2"><span class="w-4 h-2 rounded bg-[#ef4444] inline-block"></span> Atraso grave (+7d)</span>
+                </div>
                 
                 <div class="gantt-scroll-wrapper p-4 border border-gray-200 rounded-xl" id="gantt-wrapper">
                     <svg id="gantt-chart"></svg>
@@ -63,8 +68,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/frappe-gantt/0.6.1/frappe-gantt.min.js"></script>
     <script src="{{ url_for('static', filename='cronograma.js') }}"></script>
     <script>
-        const rawTasks = {{ tarefas|tojson }};
-        const tarefasGantt = processTasks(rawTasks);
+        const tarefasGantt = {{ tarefas|tojson }};
         document.addEventListener("DOMContentLoaded", function() { renderGantt(view_modes[current_mode_index], tarefasGantt); });
     </script>
 {% endblock %}

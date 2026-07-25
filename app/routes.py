@@ -59,6 +59,16 @@ def excluir_projeto(project_id):
 # ROTAS DE CONFIGURAÇÃO
 # =============================================================================
 
+@main_bp.route('/projeto/<project_id>/configuracoes', methods=['GET', 'POST'])
+def configuracoes_projeto(project_id):
+    if request.method == 'POST':
+        tolerancia = request.form.get('tolerancia_percent', 10)
+        project_manager.salvar_config_projeto(project_id, 'tolerancia_percent', tolerancia)
+        return redirect(url_for('main.configuracoes_projeto', project_id=project_id))
+    
+    config = project_manager.carregar_config_projeto(project_id)
+    return render_template('configuracoes_projeto.html', project_id=project_id, config=config)
+
 @main_bp.route('/configuracoes')
 def gerenciar_configuracoes():
     responsaveis = project_manager.carregar_responsaveis()
@@ -191,14 +201,36 @@ def kanban(project_id):
 
 @main_bp.route('/projeto/<project_id>/cronograma')
 def cronograma(project_id):
+    from datetime import datetime
     tarefas_raw = project_manager.carregar_tarefas(project_id)
     stats = project_manager.calcular_stats(tarefas_raw)
+    config = project_manager.carregar_config_projeto(project_id)
+    tolerancia_percent = int(config.get('tolerancia_percent', 10))
     tarefas_gantt = []
     for t in tarefas_raw:
+        nome_tarefa = t['subtarefa'] or t['tarefa']
         if t.get('baseline_inicio') and t.get('baseline_fim'):
-            tarefas_gantt.append({"id": f"{t['id']}_base", "name": t['subtarefa'] or t['tarefa'], "start": t['baseline_inicio'].strftime('%Y-%m-%d'), "end": t['baseline_fim'].strftime('%Y-%m-%d'), "progress": 0, "custom_class": "gantt-bar-baseline"})
+            tarefas_gantt.append({"id": f"{t['id']}_base", "name": f"{nome_tarefa} (Planejamento)", "start": t['baseline_inicio'].strftime('%Y-%m-%d'), "end": t['baseline_fim'].strftime('%Y-%m-%d'), "progress": 0, "custom_class": "gantt-bar-baseline"})
         if t.get('inicio') and t.get('fim'):
-            tarefas_gantt.append({"id": str(t['id']), "name": t['subtarefa'] or t['tarefa'], "start": t['inicio'].strftime('%Y-%m-%d'), "end": t['fim'].strftime('%Y-%m-%d'), "progress": t.get('conclusao', 0), "dependencies": t.get('predecessora_id')})
+            fim_execucao = t['fim']
+            baseline_fim = t.get('baseline_fim')
+            baseline_inicio = t.get('baseline_inicio')
+            if baseline_fim and baseline_inicio:
+                dias_baseline = (baseline_fim - baseline_inicio).days
+                if dias_baseline > 0:
+                    tolerancia_dias = dias_baseline * (tolerancia_percent / 100)
+                    if fim_execucao > baseline_fim and (fim_execucao - baseline_fim).days > tolerancia_dias:
+                        custom_class = "gantt-bar-atraso-grave"
+                    elif fim_execucao > baseline_fim:
+                        custom_class = "gantt-bar-atraso-leve"
+                    else:
+                        custom_class = "gantt-bar-execucao"
+                else:
+                    custom_class = "gantt-bar-execucao"
+            else:
+                custom_class = "gantt-bar-execucao"
+            predecessora = t.get('predecessora_id')
+            tarefas_gantt.append({"id": str(t['id']), "name": nome_tarefa, "start": t['inicio'].strftime('%Y-%m-%d'), "end": t['fim'].strftime('%Y-%m-%d'), "progress": t.get('conclusao', 0), "dependencies": [str(predecessora)] if predecessora else [], "custom_class": custom_class})
     return render_template('cronograma.html', tarefas=tarefas_gantt, page='cronograma', project_id=project_id, stats=stats)
 
 # =============================================================================
@@ -224,7 +256,7 @@ def recalcular_rapido(project_id):
         novos_dados = request.get_json()
         if novos_dados:
             dados_calculados = project_manager.recalcular_datas_cascata(novos_dados)
-            resultado = [{'id': item['id'], 'inicio': item.get('inicio', ''), 'fim': item.get('fim', ''), 'baseline_fim': item.get('baseline_fim', '')} for item in dados_calculados]
+            resultado = [{'id': item['id'], 'inicio': item.get('inicio', ''), 'fim': item.get('fim', '')} for item in dados_calculados]
             return jsonify({"status": "sucesso", "dados": resultado}), 200
         return jsonify({"status": "erro", "mensagem": "Nenhum dado recebido"}), 400
     except Exception as e:

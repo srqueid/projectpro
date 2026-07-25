@@ -80,13 +80,13 @@
                             <input name="subtarefa" value="{{ t.subtarefa or '' }}" class="sheet-input" oninput="detectarMudanca()">
                         </td>
                         <td class="p-0 border-r bg-blue-50/30">
-                            <input type="date" name="baseline_inicio" value="{{ t.baseline_inicio or '' }}" class="sheet-input text-center" oninput="confirmarAlteracaoPrevisao(event)">
+                            <input type="date" name="baseline_inicio" value="{{ t.baseline_inicio or '' }}" class="sheet-input text-center" oninput="detectarMudanca()">
                         </td>
                         <td class="p-0 border-r">
                             <input type="number" name="dias" value="{{ t.dias or 1 }}" class="sheet-input text-center" oninput="detectarMudanca(true)">
                         </td>
                         <td class="p-0 border-r bg-blue-50/30">
-                            <input type="date" name="baseline_fim" value="{{ t.baseline_fim or '' }}" class="sheet-input text-center" readonly>
+                            <input type="date" name="baseline_fim" value="{{ t.baseline_fim or '' }}" class="sheet-input text-center" oninput="detectarMudanca()">
                         </td>
                         <td class="p-0 border-r">
                             <input name="predecessora" value="{{ t.predecessora or '' }}" class="sheet-input text-center" oninput="detectarMudanca(true)">

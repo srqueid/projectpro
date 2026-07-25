@@ -88,6 +88,7 @@ def salvar_tarefas(project_id, tarefas):
     db = database.get_db()
     with db.cursor() as cur:
         cur.execute("DELETE FROM tarefas WHERE projeto_id = %s", (project_id,))
+        default_coluna_id = carregar_kanban_config(project_id)['colunas'][0]['id']
         for t in tarefas:
             try:
                 task_id = int(t['id']) if t.get('id') not in (None, '') else None
@@ -107,36 +108,25 @@ def salvar_tarefas(project_id, tarefas):
             if responsavel_id == '' or responsavel_id is None:
                 responsavel_id = None
 
+            kanban_coluna_id = t.get('kanban_coluna_id') or default_coluna_id
+
             print(f"Inserindo tarefa id={task_id} predecessor={predecessora} responsavel={responsavel_id}")
             cur.execute(
                 """
                 INSERT INTO tarefas (id, projeto_id, fase, modulo, tarefa, subtarefa, dias, predecessora_id, conclusao, responsavel_id, baseline_inicio, baseline_fim, inicio, fim, kanban_coluna_id)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (task_id, project_id, t.get('fase'), t.get('modulo'), t.get('tarefa'), t.get('subtarefa'), int(t.get('dias') or 0), predecessora, int(t.get('conclusao') or 0), responsavel_id, t.get('baseline_inicio'), t.get('baseline_fim'), t.get('inicio'), t.get('fim'), t.get('kanban_coluna_id'))
+                (task_id, project_id, t.get('fase'), t.get('modulo'), t.get('tarefa'), t.get('subtarefa'), int(t.get('dias') or 0), predecessora, int(t.get('conclusao') or 0), responsavel_id, t.get('baseline_inicio'), t.get('baseline_fim'), t.get('inicio'), t.get('fim'), kanban_coluna_id)
             )
     db.commit()
 
 def recalcular_datas_cascata(tarefas):
-    # (Esta função permanece a mesma, mas agora opera sobre os dados antes de serem salvos no BD)
     mapa_tarefas = {str(t['id']): t for t in tarefas}
     feriados_custom = carregar_feriados_custom()
     responsaveis = carregar_responsaveis()
     mapa_responsaveis = {r['id']: r for r in responsaveis}
     settings = carregar_settings()
 
-    for t in tarefas:
-        responsavel_nome = t.get('responsavel_id')
-        ferias = mapa_responsaveis.get(responsavel_nome, {}).get('ferias', [])
-        baseline_inicio_str = t.get('baseline_inicio')
-        dias = int(t.get('dias') or 0)
-        if baseline_inicio_str:
-            baseline_inicio_obj = utils.str_to_date(baseline_inicio_str)
-            if baseline_inicio_obj:
-                novo_baseline_fim = utils.date_to_str(utils.adicionar_dias_uteis(baseline_inicio_obj, dias, feriados_custom, ferias, settings.get('block_weekends', True)))
-                if t.get('baseline_fim') != novo_baseline_fim:
-                    t['baseline_fim'] = novo_baseline_fim
-    
     alteracoes = True
     loops = 0
     while alteracoes and loops < 100:
@@ -184,6 +174,22 @@ def salvar_settings(settings):
     db = database.get_db()
     with db.cursor() as cur:
         cur.execute("UPDATE configuracoes SET valor = %s WHERE chave = 'block_weekends'", (str(settings['block_weekends']).lower(),))
+    db.commit()
+
+def carregar_config_projeto(project_id):
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT chave, valor FROM projeto_configuracoes WHERE projeto_id = %s", (project_id,))
+        rows = cur.fetchall()
+        config = {}
+        for row in rows:
+            config[row['chave']] = row['valor']
+        return config
+
+def salvar_config_projeto(project_id, chave, valor):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("INSERT INTO projeto_configuracoes (projeto_id, chave, valor) VALUES (%s, %s, %s) ON CONFLICT (projeto_id, chave) DO UPDATE SET valor = EXCLUDED.valor", (project_id, chave, str(valor)))
     db.commit()
 
 def carregar_feriados_custom():
