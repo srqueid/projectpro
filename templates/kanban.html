@@ -40,16 +40,16 @@
 
         <div class="kanban-board" id="kanban-board">
             {% for col in colunas %}
-            <div class="kanban-column" data-col-id="{{ col.id }}">
+            <div class="kanban-column" data-col-id="{{ col.coluna_id }}">
                 <div class="kanban-column-header">
                     <span>{{ col.nome }}</span>
                     <div class="flex items-center gap-2">
-                        <span class="count">{{ cards_por_coluna[col.id]|length }}</span>
-                        <button onclick="abrirModalNovaTarefa('{{ col.id }}')" class="btn-add-task" title="Nova Tarefa">+</button>
+                        <span class="count">{{ cards_por_coluna[col.coluna_id]|length }}</span>
+                        <button onclick="abrirModalNovaTarefa('{{ col.coluna_id }}')" class="btn-add-task" title="Nova Tarefa">+</button>
                     </div>
                 </div>
-                <div class="kanban-column-body" data-col-id="{{ col.id }}">
-                    {% for t in cards_por_coluna[col.id] %}
+                <div class="kanban-column-body" data-col-id="{{ col.coluna_id }}">
+                    {% for t in cards_por_coluna[col.coluna_id] %}
                     <div class="kanban-card" data-id="{{ t.id }}" draggable="true">
                         <span class="card-id">#{{ t.id }}</span>
                         <div class="card-title">{{ t.tarefa or t.subtarefa or 'Sem nome' }}</div>

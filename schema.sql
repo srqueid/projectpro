@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS tarefas (
     modulo VARCHAR(255),
     tarefa VARCHAR(255),
     subtarefa VARCHAR(255),
+    descricao TEXT,
     dias INTEGER DEFAULT 1,
     predecessora_id INTEGER,
     conclusao INTEGER DEFAULT 0,
@@ -92,6 +93,8 @@ CREATE TABLE IF NOT EXISTS tarefas (
     baseline_fim DATE,
     inicio DATE,
     fim DATE,
+    restricao_tipo VARCHAR(50),
+    restricao_data DATE,
     kanban_coluna_id VARCHAR(255),
     UNIQUE(projeto_id, id)
 );
@@ -114,8 +117,26 @@ CREATE TABLE IF NOT EXISTS kanban_colunas (
     nome VARCHAR(255) NOT NULL,
     tipo VARCHAR(50) NOT NULL,
     ordem INTEGER NOT NULL,
+    progresso_padrao INTEGER,
     UNIQUE(projeto_id, coluna_id)
 );
+
+-- -----------------------------------------------------------------------------
+-- Tabela de Atividades e Comentários das Tarefas
+-- Armazena o histórico de alterações e os comentários de cada tarefa.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS tarefa_atividades (
+    id SERIAL PRIMARY KEY,
+    tarefa_pk_id INTEGER NOT NULL REFERENCES tarefas(pk_id) ON DELETE CASCADE,
+    responsavel_id UUID REFERENCES responsaveis(id) ON DELETE SET NULL,
+    tipo VARCHAR(50) NOT NULL, -- 'comentario' ou 'log'
+    detalhe TEXT NOT NULL,
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_tarefa_atividades_tarefa ON tarefa_atividades(tarefa_pk_id);
+
+COMMENT ON TABLE tarefa_atividades IS 'Log de atividades e comentários para cada tarefa.';
 
 -- -----------------------------------------------------------------------------
 -- Tabela de Configurações Globais

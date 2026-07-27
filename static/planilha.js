@@ -104,6 +104,42 @@ function handleConclusionChange(input) {
     detectarMudanca(true);
 }
 
+// --- RN015: RESTRIÇÕES E CONFLITOS ---
+
+function definirRestricaoManual(inputInicio) {
+    const tr = inputInicio.closest('tr');
+    const dataManual = inputInicio.value;
+    tr.dataset.restricaoTipo = 'inicio_nao_antes_de';
+    tr.dataset.restricaoData = dataManual;
+
+    // Verificar conflito com predecessora
+    const predecessoraId = tr.querySelector('[name="predecessora"]').value;
+    if (!predecessoraId) return;
+
+    const predTr = tbody.querySelector(`tr[data-id="${predecessoraId}"]`);
+    if (!predTr) return;
+
+    const fimPredecessora = predTr.querySelector('[name="fim"]').value;
+
+    if (dataManual && fimPredecessora && dataManual < fimPredecessora) {
+        const nomeTarefa = tr.querySelector('[name="tarefa"]').value || `ID ${tr.dataset.id}`;
+        const nomePred = predTr.querySelector('[name="tarefa"]').value || `ID ${predecessoraId}`;
+        
+        const querManter = confirm(
+            `ALERTA DE CONFLITO (RN015)\n\n` +
+            `Você está tentando iniciar a tarefa "${nomeTarefa}" em ${dataManual}, antes da conclusão de sua predecessora "${nomePred}" (prevista para ${fimPredecessora}).\n\n` +
+            `[OK] para MANTER sua data e quebrar o link com a predecessora.\n` +
+            `[Cancelar] para REMOVER sua data manual e deixar o sistema agendar.`
+        );
+
+        if (querManter) {
+            tr.querySelector('[name="predecessora"]').value = ''; // Quebra o link
+        } else {
+            tr.dataset.restricaoTipo = ''; // Remove a restrição
+            tr.dataset.restricaoData = '';
+        }
+    }
+}
 // --- VERIFICAÇÃO DE CONFLITO DE FÉRIAS ---
 
 function verificarConflitosDeFerias() {
@@ -162,7 +198,9 @@ function getTasksFromTable() {
             id: tr.dataset.id, fase: get('fase'), modulo: get('modulo'), tarefa: get('tarefa'),
             subtarefa: get('subtarefa'), inicio: get('inicio'), dias: get('dias'), fim: get('fim'),
             predecessora: get('predecessora'), baseline_inicio: get('baseline_inicio'),
-            baseline_fim: get('baseline_fim'), responsavel_id: get('responsavel'), conclusao: get('conclusao'),
+            baseline_fim: get('baseline_fim'), responsavel_id: get('responsavel'), conclusao: get('conclusao'), 
+            restricao_tipo: tr.dataset.restricaoTipo || null,
+            restricao_data: tr.dataset.restricaoData || null,
             kanban_coluna_id: get('kanban_coluna_id')
         };
     });
@@ -174,6 +212,8 @@ function renderTable(tasks) {
         const row = document.createElement('tr');
         row.className = 'group transition-colors';
         row.dataset.id = task.id;
+        row.dataset.restricaoTipo = task.restricao_tipo || '';
+        row.dataset.restricaoData = task.restricao_data || '';
         row.innerHTML = createTaskRowHtml(task);
         tbody.appendChild(row);
     });
@@ -187,6 +227,8 @@ function adicionarLinhaVazia() {
     const row = document.createElement('tr');
     row.className = 'group transition-colors';
     row.dataset.id = novoId;
+    row.dataset.restricaoTipo = '';
+    row.dataset.restricaoData = '';
     row.innerHTML = createTaskRowHtml(novaTarefa);
     tbody.appendChild(row);
     detectarMudanca(true);
@@ -202,14 +244,14 @@ function createTaskRowHtml(t) {
     return `
         <td class="p-0 align-middle text-center handle border-r no-print"><div class="h-full flex items-center justify-center cursor-grab">⋮⋮</div></td>
         <td class="p-0 text-center text-xs font-mono border-r">${t.id}</td>
-        <td class="p-0 border-r"><input name="fase" value="${t.fase || ''}" class="sheet-input" oninput="detectarMudanca()"></td>
-        <td class="p-0 border-r"><input name="tarefa" value="${t.tarefa || 'Nova Tarefa'}" class="sheet-input" oninput="detectarMudanca()"></td>
-        <td class="p-0 border-r"><input name="subtarefa" value="${t.subtarefa || ''}" class="sheet-input" oninput="detectarMudanca()"></td>
-        <td class="p-0 border-r bg-blue-50/30"><input type="date" name="baseline_inicio" value="${t.baseline_inicio || ''}" class="sheet-input text-center" oninput="detectarMudanca()"></td>
-        <td class="p-0 border-r"><input type="number" name="dias" value="${t.dias || 1}" class="sheet-input text-center" oninput="detectarMudanca(true)"></td>
-        <td class="p-0 border-r bg-blue-50/30"><input type="date" name="baseline_fim" value="${t.baseline_fim || ''}" class="sheet-input text-center" oninput="detectarMudanca()"></td>
-        <td class="p-0 border-r"><input name="predecessora" value="${t.predecessora || ''}" class="sheet-input text-center" oninput="detectarMudanca(true)"></td>
-        <td class="p-0 border-r bg-amber-50/30 relative"><input type="date" name="inicio" value="${t.inicio || ''}" class="sheet-input text-center" oninput="detectarMudanca(true)"><span class="date-alert-icon hidden" title="Conflito com férias!">⚠️</span></td>
+        <td class="p-0 border-r"><input name="fase" value="${t.fase || ''}" class="sheet-input" oninput="detectarMudanca(false, event)"></td>
+        <td class="p-0 border-r"><input name="tarefa" value="${t.tarefa || 'Nova Tarefa'}" class="sheet-input" oninput="detectarMudanca(false, event)"></td>
+        <td class="p-0 border-r"><input name="subtarefa" value="${t.subtarefa || ''}" class="sheet-input" oninput="detectarMudanca(false, event)"></td>
+        <td class="p-0 border-r bg-blue-50/30"><input type="date" name="baseline_inicio" value="${t.baseline_inicio || ''}" class="sheet-input text-center" oninput="detectarMudanca(false, event)"></td>
+        <td class="p-0 border-r"><input type="number" name="dias" value="${t.dias || 1}" class="sheet-input text-center" oninput="detectarMudanca(true, event)"></td>
+        <td class="p-0 border-r bg-blue-50/30"><input type="date" name="baseline_fim" value="${t.baseline_fim || ''}" class="sheet-input text-center" oninput="detectarMudanca(false, event)"></td>
+        <td class="p-0 border-r"><input name="predecessora" value="${t.predecessora || ''}" class="sheet-input text-center" oninput="detectarMudanca(true, event)"></td>
+        <td class="p-0 border-r bg-amber-50/30 relative"><input type="date" name="inicio" value="${t.inicio || ''}" class="sheet-input text-center" oninput="detectarMudanca(true, event)"><span class="date-alert-icon hidden" title="Conflito com férias!">⚠️</span></td>
         <td class="p-0 border-r bg-amber-50/30 relative"><input type="date" name="fim" value="${t.fim || ''}" class="sheet-input text-center" oninput="detectarMudanca(true)"><span class="date-alert-icon hidden" title="Conflito com férias!">⚠️</span></td>
         <td class="p-0 border-r"><select name="responsavel" class="sheet-input" oninput="detectarMudanca(true)"><option value="">Nenhum</option>${responsaveisOptions}</select></td>
         <td class="p-0 border-r relative"><div class="progress-bar" style="width: ${t.conclusao || 0}%;"></div><input type="number" name="conclusao" value="${t.conclusao || 0}" class="sheet-input text-center" oninput="handleConclusionChange(this)"></td>

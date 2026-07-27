@@ -9,7 +9,7 @@ from flask import (
     Blueprint, render_template, request, redirect, url_for, send_file, jsonify
 )
 from werkzeug.utils import secure_filename
-from datetime import datetime
+from datetime import datetime, date
 
 from . import utils, project_manager, config
 
@@ -188,16 +188,53 @@ def kanban(project_id):
     tarefas = project_manager.carregar_tarefas(project_id)
     kanban_config = project_manager.carregar_kanban_config(project_id)
     colunas = kanban_config.get('colunas', [])
+    mapa_tipos_coluna = {col['coluna_id']: col['tipo'] for col in colunas}
+    hoje = date.today() # Adicionado para RN024
+    
+    # Carrega os responsáveis para obter seus nomes
+    responsaveis = project_manager.carregar_responsaveis()
+    mapa_responsaveis = {str(r['id']): r['nome'] for r in responsaveis}
+
+    mapa_tarefas = {str(t['id']): t for t in tarefas}
+    for t in tarefas:
+        # Adiciona o nome do responsável à tarefa
+        if t.get('responsavel_id'):
+            t['responsavel_nome'] = mapa_responsaveis.get(str(t['responsavel_id']))
+
+        # Carrega atividades e comentários
+        atividades = project_manager.carregar_atividades_tarefa(t['pk_id'])
+        t['atividades'] = atividades
+
+        # RN024: Identificar tarefas vencidas (Lógica existente)
+        t['em_atraso'] = False
+        fim_tarefa = t.get('fim')
+        coluna_id = t.get('kanban_coluna_id')
+        coluna_tipo = mapa_tipos_coluna.get(coluna_id)
+
+        if coluna_tipo != 'fim' and fim_tarefa and fim_tarefa < hoje:
+            t['em_atraso'] = True
+            t['dias_atraso'] = (hoje - fim_tarefa).days
+
+        # RN023: Identificar tarefas bloqueadas
+        predecessora_id = str(t.get('predecessora_id') or '').strip()
+        if predecessora_id and predecessora_id in mapa_tarefas:
+            predecessora = mapa_tarefas[predecessora_id]
+            pred_coluna_id = predecessora.get('kanban_coluna_id')
+            pred_coluna_tipo = mapa_tipos_coluna.get(pred_coluna_id)
+
+            if pred_coluna_tipo != 'fim' and predecessora.get('conclusao', 0) < 100:
+                t['bloqueada_por'] = {
+                    'id': predecessora['id'],
+                    'nome': predecessora.get('subtarefa') or predecessora.get('tarefa') or f"Tarefa #{predecessora['id']}"
+                }
+
     stats = project_manager.calcular_stats(tarefas)
-    cards_por_coluna = {col['id']: [] for col in colunas}
-    cards_por_coluna['__sem_coluna__'] = []
+    cards_por_coluna = {col['coluna_id']: [] for col in colunas}
     for t in tarefas:
         coluna_id = t.get('kanban_coluna_id')
-        if coluna_id in cards_por_coluna:
-            cards_por_coluna[coluna_id].append(t)
-        else:
-            cards_por_coluna['__sem_coluna__'].append(t)
-    return render_template('kanban.html', tarefas=tarefas, page='kanban', project_id=project_id, stats=stats, colunas=colunas, cards_por_coluna=cards_por_coluna)
+        cards_por_coluna.setdefault(coluna_id, []).append(t)
+
+    return render_template('kanban.html', tarefas=tarefas, page='kanban', project_id=project_id, stats=stats, colunas=colunas, cards_por_coluna=cards_por_coluna, responsaveis=responsaveis)
 
 @main_bp.route('/projeto/<project_id>/cronograma')
 def cronograma(project_id):
@@ -269,11 +306,42 @@ def kanban_mover_card(project_id):
     project_manager.mover_card_kanban(project_id, data['card_id'], data['coluna_destino'])
     return jsonify({"status": "sucesso"}), 200
 
+@main_bp.route('/projeto/<project_id>/kanban/salvar_config', methods=['POST'])
+def kanban_salvar_config(project_id):
+    config_data = request.get_json()
+    project_manager.salvar_kanban_config(project_id, config_data)
+    return jsonify({"status": "sucesso"}), 200
+
 @main_bp.route('/projeto/<project_id>/adicionar_tarefa', methods=['POST'])
 def adicionar_tarefa_kanban(project_id):
     dados = request.get_json()
     project_manager.adicionar_tarefa(project_id, dados)
     return jsonify({"status": "sucesso"}), 200
+
+@main_bp.route('/projeto/<project_id>/editar_tarefa/<task_id>', methods=['POST'])
+def editar_tarefa_kanban(project_id, task_id):
+    dados = request.get_json()
+    project_manager.editar_tarefa(project_id, task_id, dados)
+
+    # Se uma data ou duração foi alterada, recalcula o projeto
+    if any(k in dados for k in ['inicio', 'dias']):
+        tarefas_atuais = project_manager.carregar_tarefas(project_id)
+        tarefas_recalculadas = project_manager.recalcular_datas_cascata(tarefas_atuais)
+        project_manager.salvar_tarefas_recalculadas(project_id, tarefas_recalculadas)
+
+    return jsonify({"status": "sucesso"}), 200
+
+@main_bp.route('/projeto/<project_id>/tarefa/<task_pk_id>/adicionar_comentario', methods=['POST'])
+def adicionar_comentario(project_id, task_pk_id):
+    dados = request.get_json()
+    comentario = dados.get('comentario')
+    # Em um sistema real, o ID do responsável viria da sessão do usuário logado.
+    # Por enquanto, vamos permitir que seja enviado ou usar um valor fixo/nulo.
+    responsavel_id = dados.get('responsavel_id') or None 
+    if comentario:
+        project_manager.adicionar_comentario_tarefa(task_pk_id, responsavel_id, comentario)
+        return jsonify({"status": "sucesso"}), 200
+    return jsonify({"status": "erro", "mensagem": "Comentário vazio"}), 400
 
 @main_bp.route('/projeto/<project_id>/exportar_excel')
 def exportar_excel(project_id):
