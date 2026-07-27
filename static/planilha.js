@@ -52,6 +52,17 @@ function updateUndoButton() {
 }
 
 function detectarMudanca(forceRecalculate = false) {
+    // Validar datas de fim >= inicio
+    const datasValidas = validarTodasDatas();
+
+    if (!datasValidas) {
+        setStatus('Datas inválidas!', 'text-red-600');
+        // Bloqueia o salvamento automático se houver datas inválidas
+        if (saveTimeout) clearTimeout(saveTimeout);
+        if (recalculateTimeout) clearTimeout(recalculateTimeout);
+        return;
+    }
+
     setStatus('Modificado...', 'text-amber-600');
     if (saveTimeout) clearTimeout(saveTimeout);
     saveTimeout = setTimeout(() => {
@@ -94,6 +105,59 @@ function setStatus(text, colorClass) {
     statusDisplay.className = `text-xs font-medium transition-all ${colorClass}`;
 }
 
+// --- VALIDAÇÃO: DATA FIM NÃO PODE SER MENOR QUE DATA INÍCIO ---
+
+function validarDatasTarefa(tr) {
+    // Validar Real Início / Real Fim
+    const inicioInput = tr.querySelector('[name="inicio"]');
+    const fimInput = tr.querySelector('[name="fim"]');
+    const inicio = inicioInput?.value;
+    const fim = fimInput?.value;
+
+    [inicioInput, fimInput].forEach(input => {
+        if (!input) return;
+        if (inicio && fim && fim < inicio) {
+            input.classList.add('date-invalid');
+            input.title = 'Data final é anterior à data inicial!';
+        } else {
+            input.classList.remove('date-invalid');
+            input.title = '';
+        }
+    });
+
+    // Validar Planejado Início / Planejado Fim (baseline)
+    const blInicioInput = tr.querySelector('[name="baseline_inicio"]');
+    const blFimInput = tr.querySelector('[name="baseline_fim"]');
+    const blInicio = blInicioInput?.value;
+    const blFim = blFimInput?.value;
+
+    [blInicioInput, blFimInput].forEach(input => {
+        if (!input) return;
+        if (blInicio && blFim && blFim < blInicio) {
+            input.classList.add('date-invalid');
+            input.title = 'Data final planejada é anterior à data inicial planejada!';
+        } else {
+            input.classList.remove('date-invalid');
+            input.title = '';
+        }
+    });
+
+    // Retorna true se ambos forem válidos
+    const realValido = !(inicio && fim && fim < inicio);
+    const planValido = !(blInicio && blFim && blFim < blInicio);
+    return realValido && planValido;
+}
+
+function validarTodasDatas() {
+    let todasValidas = true;
+    tbody.querySelectorAll('tr').forEach(tr => {
+        if (!validarDatasTarefa(tr)) {
+            todasValidas = false;
+        }
+    });
+    return todasValidas;
+}
+
 function handleConclusionChange(input) {
     const tr = input.closest('tr');
     const fimInput = tr.querySelector('[name="fim"]');
@@ -102,6 +166,24 @@ function handleConclusionChange(input) {
         fimInput.value = hoje;
     }
     detectarMudanca(true);
+}
+
+// --- MOVER PARA "EM ANDAMENTO" QUANDO DATA DE INÍCIO É PREENCHIDA ---
+
+function handleInicioChange(input) {
+    const tr = input.closest('tr');
+    const kanbanColunaInput = tr.querySelector('[name="kanban_coluna_id"]');
+    if (!kanbanColunaInput) return;
+
+    const colunaAtual = kanbanColunaInput.value;
+    const novoValor = input.value;
+
+    // Se preencheu uma data de início E está em backlog ou iniciar, move para andamento
+    if (novoValor && colunaAndamentoId && (colunaAtual === 'backlog' || colunaAtual === 'iniciar')) {
+        kanbanColunaInput.value = colunaAndamentoId;
+    }
+
+    detectarMudanca(false);
 }
 
 // --- RN015: RESTRIÇÕES E CONFLITOS ---
@@ -251,7 +333,7 @@ function createTaskRowHtml(t) {
         <td class="p-0 border-r"><input type="number" name="dias" value="${t.dias || 1}" class="sheet-input text-center" oninput="detectarMudanca(true, event)"></td>
         <td class="p-0 border-r bg-blue-50/30"><input type="date" name="baseline_fim" value="${t.baseline_fim || ''}" class="sheet-input text-center" oninput="detectarMudanca(false, event)"></td>
         <td class="p-0 border-r"><input name="predecessora" value="${t.predecessora || ''}" class="sheet-input text-center" oninput="detectarMudanca(true, event)"></td>
-        <td class="p-0 border-r bg-amber-50/30 relative"><input type="date" name="inicio" value="${t.inicio || ''}" class="sheet-input text-center" oninput="detectarMudanca(true, event)"><span class="date-alert-icon hidden" title="Conflito com férias!">⚠️</span></td>
+    <td class="p-0 border-r bg-amber-50/30 relative"><input type="date" name="inicio" value="${t.inicio || ''}" class="sheet-input text-center" oninput="handleInicioChange(this)"><span class="date-alert-icon hidden" title="Conflito com férias!">⚠️</span></td>
         <td class="p-0 border-r bg-amber-50/30 relative"><input type="date" name="fim" value="${t.fim || ''}" class="sheet-input text-center" oninput="detectarMudanca(true)"><span class="date-alert-icon hidden" title="Conflito com férias!">⚠️</span></td>
         <td class="p-0 border-r"><select name="responsavel" class="sheet-input" oninput="detectarMudanca(true)"><option value="">Nenhum</option>${responsaveisOptions}</select></td>
         <td class="p-0 border-r relative"><div class="progress-bar" style="width: ${t.conclusao || 0}%;"></div><input type="number" name="conclusao" value="${t.conclusao || 0}" class="sheet-input text-center" oninput="handleConclusionChange(this)"></td>
@@ -271,11 +353,11 @@ async function autoRecalcular() {
         if (response.ok) {
             const result = await response.json();
             if (result.status === 'sucesso' && result.dados) {
-                result.dados.forEach(item => {
+        result.dados.forEach(item => {
                     const tr = tbody.querySelector(`tr[data-id="${item.id}"]`);
                     if (tr) {
-                        tr.querySelector('[name="inicio"]').value = item.inicio;
-                        tr.querySelector('[name="fim"]').value = item.fim;
+                        tr.querySelector('[name="baseline_inicio"]').value = item.baseline_inicio;
+                        tr.querySelector('[name="baseline_fim"]').value = item.baseline_fim;
                     }
                 });
                 detectarMudanca(false);

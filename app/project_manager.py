@@ -84,12 +84,40 @@ def carregar_tarefas(project_id):
         cur.execute("SELECT * FROM tarefas WHERE projeto_id = %s ORDER BY id", (project_id,))
         return [dict(row) for row in cur.fetchall()]
 
+def _validar_datas_tarefa(t):
+    """
+    Valida que as datas de execução e baseline são consistentes.
+    - data de fim não pode ser anterior à data de início
+    - data de baseline_fim não pode ser anterior à baseline_inicio
+    Retorna uma tupla (valido, mensagem_erro).
+    """
+    inicio = t.get('inicio')
+    fim = t.get('fim')
+    if inicio and fim and fim < inicio:
+        nome = t.get('tarefa') or t.get('subtarefa') or f"ID {t.get('id')}"
+        return False, f"Tarefa '{nome}': data de fim ({fim}) é anterior à data de início ({inicio})."
+    
+    # Validar baseline
+    bl_inicio = t.get('baseline_inicio')
+    bl_fim = t.get('baseline_fim')
+    if bl_inicio and bl_fim and bl_fim < bl_inicio:
+        nome = t.get('tarefa') or t.get('subtarefa') or f"ID {t.get('id')}"
+        return False, f"Tarefa '{nome}': baseline de fim ({bl_fim}) é anterior à baseline de início ({bl_inicio})."
+    
+    return True, None
+
+
 def salvar_tarefas(project_id, tarefas):
     db = database.get_db()
     with db.cursor() as cur:
         cur.execute("DELETE FROM tarefas WHERE projeto_id = %s", (project_id,))
         default_coluna_id = carregar_kanban_config(project_id)['colunas'][0]['coluna_id']
         for t in tarefas:
+            # Validar datas
+            valido, erro = _validar_datas_tarefa(t)
+            if not valido:
+                raise ValueError(erro)
+
             try:
                 task_id = int(t['id']) if t.get('id') not in (None, '') else None
             except (ValueError, TypeError):
@@ -124,17 +152,25 @@ def salvar_tarefas_recalculadas(project_id, tarefas):
     """
     Salva apenas as datas e campos de restrição de uma lista de tarefas,
     otimizado para atualizações pós-recálculo.
+    Agora atualiza baseline_inicio/baseline_fim (datas planejadas) em vez de inicio/fim (datas reais).
     """
     db = database.get_db()
     with db.cursor() as cur:
         for t in tarefas:
             cur.execute(
-                "UPDATE tarefas SET inicio = %s, fim = %s, restricao_tipo = %s, restricao_data = %s WHERE projeto_id = %s AND id = %s",
-                (t.get('inicio'), t.get('fim'), t.get('restricao_tipo'), t.get('restricao_data'), project_id, t['id'])
+                "UPDATE tarefas SET baseline_inicio = %s, baseline_fim = %s, restricao_tipo = %s, restricao_data = %s WHERE projeto_id = %s AND id = %s",
+                (t.get('baseline_inicio'), t.get('baseline_fim'), t.get('restricao_tipo'), t.get('restricao_data'), project_id, t['id'])
             )
     db.commit()
 
 def recalcular_datas_cascata(tarefas):
+    """
+    Recalcula as datas planejadas (baseline_inicio/baseline_fim) em cascata.
+    - Usa a data real (inicio) como ponto de partida, se existir
+    - Considera predecessoras (usa o baseline_fim da predecessora)
+    - Aplica restrições manuais (RN015)
+    - Escreve o resultado em baseline_inicio/baseline_fim (datas planejadas)
+    """
     mapa_tarefas = {str(t['id']): t for t in tarefas}
     feriados_custom = carregar_feriados_custom()
     responsaveis = carregar_responsaveis()
@@ -152,8 +188,8 @@ def recalcular_datas_cascata(tarefas):
             ferias = mapa_responsaveis.get(responsavel_nome, {}).get('ferias', [])
             dias = int(t.get('dias') or 0)
             
-            # Ponto de partida para o cálculo
-            novo_inicio = utils.str_to_date(t.get('inicio'))
+            # Ponto de partida: usa a data planejada existente, ou a data real como fallback
+            novo_inicio = utils.str_to_date(t.get('baseline_inicio') or t.get('inicio'))
 
             # RN015: Verificar se há restrição manual de data
             if t.get('restricao_tipo') == 'inicio_nao_antes_de' and t.get('restricao_data'):
@@ -161,20 +197,23 @@ def recalcular_datas_cascata(tarefas):
                 if not novo_inicio or novo_inicio < restricao_inicio:
                     novo_inicio = restricao_inicio
 
-            # Se houver predecessora, a data dela tem prioridade (a menos que a restrição seja mais tarde)
+            # Se houver predecessora, a baseline_fim dela tem prioridade
             pred_id = str(t.get('predecessora_id') or t.get('predecessora') or '').lower().strip()
             if pred_id and pred_id in mapa_tarefas:
-                fim_pred = mapa_tarefas[pred_id].get('fim')
-                novo_inicio_pred = utils.str_to_date(fim_pred)
-                if not novo_inicio or novo_inicio_pred > novo_inicio:
-                    novo_inicio = novo_inicio_pred
+                # Usa a baseline_fim (planejada) da predecessora
+                baseline_fim_pred = mapa_tarefas[pred_id].get('baseline_fim')
+                if baseline_fim_pred:
+                    novo_inicio_pred = utils.str_to_date(baseline_fim_pred)
+                    if not novo_inicio or novo_inicio_pred > novo_inicio:
+                        novo_inicio = novo_inicio_pred
 
             if novo_inicio:
                 novo_fim = utils.date_to_str(utils.adicionar_dias_uteis(novo_inicio, dias, feriados_custom, ferias, settings.get('block_weekends', True)))
                 novo_inicio_str = utils.date_to_str(novo_inicio)
-                if t.get('inicio') != novo_inicio_str or t.get('fim') != novo_fim:
-                    t['inicio'] = novo_inicio_str
-                    t['fim'] = novo_fim
+                # Escreve em baseline_inicio/baseline_fim (datas planejadas)
+                if t.get('baseline_inicio') != novo_inicio_str or t.get('baseline_fim') != novo_fim:
+                    t['baseline_inicio'] = novo_inicio_str
+                    t['baseline_fim'] = novo_fim
                     alteracoes = True
     return tarefas
 
@@ -287,10 +326,29 @@ def mover_card_kanban(project_id, card_id, coluna_destino_id):
         tipo_dest = col_dest['tipo']
         progresso_padrao = col_dest['progresso_padrao']
 
+        # Carrega dados atuais da tarefa e da coluna de origem
+        cur.execute("SELECT kanban_coluna_id, inicio FROM tarefas WHERE projeto_id = %s AND id = %s", (project_id, card_id))
+        tarefa_atual = cur.fetchone()
+        coluna_origem_id = tarefa_atual['kanban_coluna_id'] if tarefa_atual else None
+        inicio_existente = tarefa_atual['inicio'] if tarefa_atual else None
+
+        # Obtém o tipo da coluna de origem
+        tipo_origem = None
+        if coluna_origem_id:
+            cur.execute("SELECT tipo FROM kanban_colunas WHERE projeto_id = %s AND coluna_id = %s", (project_id, coluna_origem_id))
+            col_orig = cur.fetchone()
+            if col_orig:
+                tipo_origem = col_orig['tipo']
+
         update_fields = {"kanban_coluna_id": coluna_destino_id}
 
-        # RN022: Se o trabalho começou (movido para uma coluna de "meio")
-        if tipo_dest == 'meio' and 'inicio' not in update_fields:
+        # Se o card saiu da coluna "Iniciar" (tipo 'inicio') e NÃO voltou para "Backlog" (tipo 'backlog'),
+        # insere a data de início se ainda não existir
+        if tipo_origem == 'inicio' and tipo_dest != 'backlog' and not inicio_existente:
+            update_fields['inicio'] = datetime.now().strftime('%Y-%m-%d')
+
+        # RN022: Se o trabalho começou (movido para uma coluna de "meio") e ainda não tem data de início
+        if tipo_dest == 'meio' and 'inicio' not in update_fields and not inicio_existente:
              update_fields['inicio'] = datetime.now().strftime('%Y-%m-%d')
 
         # RN019: Se a tarefa foi concluída
@@ -336,6 +394,11 @@ def adicionar_log_atividade(cur, tarefa_pk_id, responsavel_id, detalhe):
 
 def editar_tarefa(project_id, task_id, dados):
     """Atualiza os campos de uma única tarefa."""
+    # Validar datas antes de atualizar
+    valido, erro = _validar_datas_tarefa(dados)
+    if not valido:
+        raise ValueError(erro)
+
     db = database.get_db()
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         # Carrega a tarefa atual para comparar as mudanças

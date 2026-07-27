@@ -52,12 +52,12 @@
                         <th class="p-0 sortable" onclick="ordenar('fase', 'texto')">Fase <span class="sort-icon">⇅</span></th>
                         <th class="p-0 sortable" onclick="ordenar('tarefa', 'texto')">Tarefa <span class="sort-icon">⇅</span></th>
                         <th class="p-0 sortable" onclick="ordenar('subtarefa', 'texto')">Subtarefa <span class="sort-icon">⇅</span></th>
-                        <th class="p-0 w-36 text-center draggable-col bg-blue-50/50">Baseline Início</th>
+                        <th class="p-0 w-36 text-center draggable-col bg-blue-50/50">Início <small class="text-gray-400 font-normal">(Planejado)</small></th>
                         <th class="p-0 w-20 text-center sortable" onclick="ordenar('dias', 'numero')">Dias <span class="sort-icon">⇅</span></th>
-                        <th class="p-0 w-36 text-center bg-blue-50/50">Baseline Fim</th>
+                        <th class="p-0 w-36 text-center bg-blue-50/50">Fim <small class="text-gray-400 font-normal">(Planejado)</small></th>
                         <th class="p-0 w-24 text-center sortable" onclick="ordenar('predecessora', 'texto')">Predeces. <span class="sort-icon">⇅</span></th>
-                        <th class="p-0 w-36 text-center bg-amber-50/50">Início</th>
-                        <th class="p-0 w-36 text-center bg-amber-50/50">Fim</th>
+                        <th class="p-0 w-36 text-center bg-amber-50/50">Real Início</th>
+                        <th class="p-0 w-36 text-center bg-amber-50/50">Real Fim</th>
                         <th class="p-0 w-44 sortable" onclick="ordenar('responsavel_id', 'texto')">Responsável <span class="sort-icon">⇅</span></th>
                         <th class="p-0 w-24 text-center sortable" onclick="ordenar('conclusao', 'numero')">% <span class="sort-icon">⇅</span></th>
                         <th class="p-0 w-10 text-center no-print">✕</th>
@@ -92,7 +92,7 @@
                             <input name="predecessora" value="{{ t.predecessora or '' }}" class="sheet-input text-center" oninput="detectarMudanca(true)">
                         </td>
                         <td class="p-0 border-r bg-amber-50/30 relative">
-                            <input type="date" name="inicio" value="{{ t.inicio or '' }}" class="sheet-input text-center" oninput="detectarMudanca(true)">
+                            <input type="date" name="inicio" value="{{ t.inicio or '' }}" class="sheet-input text-center" oninput="handleInicioChange(this)">
                             <span class="date-alert-icon hidden" title="Conflito com férias!">⚠️</span>
                         </td>
                         <td class="p-0 border-r bg-amber-50/30 relative">
@@ -127,6 +127,7 @@
         const projectSalvarUrl = "{{ url_for('main.salvar_lote', project_id=project_id) }}";
         const initialTasks = {{ tarefas|tojson }};
         const responsaveis = {{ responsaveis|tojson }};
+        const colunaAndamentoId = "{{ coluna_andamento_id }}";
     </script>
     <script src="{{ url_for('static', filename='planilha.js') }}"></script>
 {% endblock %}

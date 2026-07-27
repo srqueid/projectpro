@@ -175,7 +175,14 @@ def planilha(project_id):
     responsaveis = project_manager.carregar_responsaveis()
     times = project_manager.carregar_times()
     projeto = project_manager.carregar_projeto_por_id(project_id)
-    return render_template('planilha.html', tarefas=tarefas, page='planilha', project_id=project_id, stats=stats, responsaveis=responsaveis, times=times, projeto=projeto)
+    # Carrega a config Kanban para identificar a coluna "Em Andamento" (tipo 'meio')
+    kanban_config = project_manager.carregar_kanban_config(project_id)
+    coluna_andamento_id = ''
+    for col in kanban_config.get('colunas', []):
+        if col['tipo'] == 'meio':
+            coluna_andamento_id = col['coluna_id']
+            break
+    return render_template('planilha.html', tarefas=tarefas, page='planilha', project_id=project_id, stats=stats, responsaveis=responsaveis, times=times, projeto=projeto, coluna_andamento_id=coluna_andamento_id)
 
 @main_bp.route('/projeto/<project_id>/associar_time', methods=['POST'])
 def associar_time_projeto(project_id):
@@ -293,7 +300,7 @@ def recalcular_rapido(project_id):
         novos_dados = request.get_json()
         if novos_dados:
             dados_calculados = project_manager.recalcular_datas_cascata(novos_dados)
-            resultado = [{'id': item['id'], 'inicio': item.get('inicio', ''), 'fim': item.get('fim', '')} for item in dados_calculados]
+            resultado = [{'id': item['id'], 'baseline_inicio': item.get('baseline_inicio', ''), 'baseline_fim': item.get('baseline_fim', '')} for item in dados_calculados]
             return jsonify({"status": "sucesso", "dados": resultado}), 200
         return jsonify({"status": "erro", "mensagem": "Nenhum dado recebido"}), 400
     except Exception as e:

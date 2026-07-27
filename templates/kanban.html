@@ -100,5 +100,9 @@
     <script id="kanban-config" type="text/javascript">
         const projectId = "{{ project_id }}";
     </script>
+    <script>
+        const kanbanColumns = {{ colunas|tojson }};
+        const allTasks = {{ tarefas|tojson }};
+    </script>
     <script src="{{ url_for('static', filename='kanban.js') }}"></script>
 {% endblock %}

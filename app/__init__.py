@@ -1,7 +1,7 @@
 # app/__init__.py
 import os
 from flask import Flask
-from . import config, database
+from . import config, database, migrations
 
 def create_app():
     """
@@ -14,6 +14,13 @@ def create_app():
     
     # --- INICIALIZAÇÃO DO BANCO DE DADOS ---
     database.init_app(app)
+
+    # --- EXECUTAR MIGRAÇÕES DO BANCO DE DADOS ---
+    with app.app_context():
+        try:
+            migrations.executar_migracoes()
+        except Exception as e:
+            print(f"[MIGRAÇÕES] Erro ao executar migrações: {e}")
 
     # --- GARANTIR QUE AS PASTAS EXISTAM ---
     os.makedirs(config.PROJECTS_FOLDER, exist_ok=True)

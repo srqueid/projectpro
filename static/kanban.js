@@ -1,7 +1,5 @@
 // === KANBAN ===
-const projectId = document.getElementById('kanban-config')?.textContent?.match(/projectId\s*=\s*"([^"]+)"/)?.[1];
-let kanbanColumns = JSON.parse(document.getElementById('kanban-config')?.textContent?.match(/kanbanColumns\s*=\s*(\[.*\])/)?.[1] || '[]');
-let allTasks = JSON.parse(document.getElementById('kanban-config')?.textContent?.match(/allTasks\s*=\s*(\[.*\])/)?.[1] || '[]');
+// projectId, kanbanColumns e allTasks são definidos globalmente no template (antes deste script)
 const tasksMap = new Map(allTasks.map(task => [String(task.id), task]));
 
 function getInitials(name) {
