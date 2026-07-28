@@ -114,6 +114,7 @@
                         <td class="p-0 text-center no-print">
                             <button onclick="this.closest('tr').remove(); detectarMudanca(true)" class="w-full h-full text-gray-300 hover:text-red-500">✕</button>
                             <input type="hidden" name="modulo" value="{{ t.modulo or '' }}">
+                            <input type="hidden" name="kanban_coluna_id" value="{{ t.kanban_coluna_id or 'backlog' }}">
                         </td>
                     </tr>
                     {% endfor %}

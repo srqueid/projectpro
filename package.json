@@ -1,6 +1,14 @@
 {
+  "scripts": {
+    "build:css": "npx @tailwindcss/cli -i ./static/tailwind-input.css -o ./static/tailwind.css --minify",
+    "watch:css": "npx @tailwindcss/cli -i ./static/tailwind-input.css -o ./static/tailwind.css --watch"
+  },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3"
   }
 }
+

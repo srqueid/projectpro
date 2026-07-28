@@ -173,17 +173,15 @@ function handleConclusionChange(input) {
 function handleInicioChange(input) {
     const tr = input.closest('tr');
     const kanbanColunaInput = tr.querySelector('[name="kanban_coluna_id"]');
-    if (!kanbanColunaInput) return;
-
-    const colunaAtual = kanbanColunaInput.value;
     const novoValor = input.value;
 
-    // Se preencheu uma data de início E está em backlog ou iniciar, move para andamento
-    if (novoValor && colunaAndamentoId && (colunaAtual === 'backlog' || colunaAtual === 'iniciar')) {
+    // Se preencheu uma data de início e existe o hidden field, move para andamento
+    if (kanbanColunaInput && novoValor && colunaAndamentoId && (kanbanColunaInput.value === 'backlog' || kanbanColunaInput.value === 'iniciar')) {
         kanbanColunaInput.value = colunaAndamentoId;
     }
 
-    detectarMudanca(false);
+    // Sempre salva e recalcula quando a data de início mudar
+    detectarMudanca(true);
 }
 
 // --- RN015: RESTRIÇÕES E CONFLITOS ---

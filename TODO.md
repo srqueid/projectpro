@@ -1,11 +1,10 @@
-# TODO - Implementação: Data Início no Kanban e Planilha
+# TODO - Correções de Bugs e Melhorias (CONCLUÍDO)
 
-## Tarefas
-
-- [x] 1. **routes.py**: Carregar kanban config, identificar coluna de tipo "meio" e passar ao template da planilha
-- [x] 2. **planilha.html**: Adicionar variável JS com o ID da coluna "Em Andamento"
-- [x] 3. **planilha.js**: Quando campo "Real Início" for preenchido, alterar kanban_coluna_id para "Em Andamento"
-- [x] 4. **project_manager.py**: Ao mover card saindo da coluna "Iniciar" para qualquer coluna que não seja "Backlog", inserir data de início automaticamente
-
-## ✅ Concluído
+## ✅ Passos Concluídos
+- [x] **Bug 1 (Planilha):** Adicionar hidden field `kanban_coluna_id` no template Jinja2 `planilha.html` — estava faltando, causando `return` prematuro em `handleInicioChange()`
+- [x] **Bug 1 (Planilha):** Corrigir `handleInicioChange()` em `planilha.js` — remover `if (!kanbanColunaInput) return;` e forçar `detectarMudanca(true)` sempre que data de início mudar
+- [x] **Bug 2 (Kanban):** Expandir modal "Nova Tarefa" em `templates/kanban.html` com todos os campos: fase, subtarefa, responsável, dias, início, fim, conclusão, descrição
+- [x] **Bug 2 (Kanban):** Atualizar `static/kanban.js` para enviar todos os novos campos no submit do formulário
+- [x] **Migração Tailwind CDN → Build Local** (pacote anterior)
+- [x] **Correção CSS `planilha.css`** (pacote anterior)
 

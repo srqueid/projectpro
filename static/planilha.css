@@ -1,6 +1,5 @@
 /* --- ESTILOS DA PLANILHA --- */
 html {
-    -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
 }
 .handle { cursor: grab; color: #94a3b8; }

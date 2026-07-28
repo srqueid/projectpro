@@ -80,19 +80,30 @@ document.getElementById('form-nova-tarefa').addEventListener('submit', async fun
         return;
     }
 
+    const dados = {
+        tarefa: nome,
+        fase: document.getElementById('fase-nova-tarefa').value || null,
+        subtarefa: document.getElementById('subtarefa-nova-tarefa').value || null,
+        responsavel_id: document.getElementById('responsavel-nova-tarefa').value || null,
+        dias: document.getElementById('dias-nova-tarefa').value || null,
+        inicio: document.getElementById('inicio-nova-tarefa').value || null,
+        fim: document.getElementById('fim-nova-tarefa').value || null,
+        conclusao: document.getElementById('conclusao-nova-tarefa').value || 0,
+        descricao: document.getElementById('descricao-nova-tarefa').value || null,
+        kanban_coluna_id: colunaId
+    };
+
     try {
         const response = await fetch(`/projeto/${projectId}/adicionar_tarefa`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                tarefa: nome,
-                kanban_coluna_id: colunaId
-            })
+            body: JSON.stringify(dados)
         });
         if (response.ok) {
             location.reload();
         } else {
-            alert('Erro ao criar a tarefa.');
+            const error = await response.json().catch(() => ({}));
+            alert(error.mensagem || 'Erro ao criar a tarefa.');
         }
     } catch (e) {
         console.error('Erro de conexão:', e);
