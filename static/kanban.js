@@ -120,6 +120,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const colunas = board.querySelectorAll('.kanban-column-body');
     if (colunas.length === 0) return;
 
+    const colunaMap = new Map(kanbanColumns.map(c => [c.coluna_id, c]));
+
     colunas.forEach(coluna => {
         new Sortable(coluna, {
             group: 'kanban',
@@ -136,29 +138,40 @@ document.addEventListener('DOMContentLoaded', function() {
                 // RN023 - Bloqueio de dependência
                 if (cardEl.classList.contains('kanban-card-bloqueado')) {
                     alert('Ação bloqueada (RN023): Esta tarefa depende da conclusão de uma tarefa anterior.');
-                    // Reverte o movimento visualmente
                     evt.from.appendChild(cardEl);
                     return;
                 }
 
                 if (!taskId || !colunaDestino) return;
 
+                // Validação de fluxo (allow_back): impede movimento para trás se a coluna de origem não permitir
+                const colunaOrigemInfo = colunaMap.get(colunaOrigem);
+                const colunaDestinoInfo = colunaMap.get(colunaDestino);
+                if (colunaOrigemInfo && colunaDestinoInfo) {
+                    const ordemOrigem = kanbanColumns.indexOf(colunaOrigemInfo);
+                    const ordemDestino = kanbanColumns.indexOf(colunaDestinoInfo);
+                    
+                    // Movendo para trás (destino antes da origem)
+                    if (ordemDestino < ordemOrigem) {
+                        // Verifica se a coluna de origem permite voltar
+                        if (!colunaOrigemInfo.allow_back) {
+                            alert(`Movimento bloqueado: A coluna "${colunaOrigemInfo.nome}" não permite mover cards para trás no fluxo.`);
+                            evt.from.appendChild(cardEl);
+                            return;
+                        }
+                    }
+                }
+
                 // RN018 - Validação de entrada na coluna de Início
-                const colunaDestinoInfo = kanbanColumns.find(c => c.coluna_id === colunaDestino);
                 if (colunaDestinoInfo && colunaDestinoInfo.tipo === 'inicio') {
-                    // Precisamos dos dados da tarefa para validar.
-                    // Esta é uma simplificação. O ideal seria ter os dados da tarefa em um objeto JS.
-                    // Por agora, vamos buscar o card no DOM e extrair o que pudermos.
                     const responsavelSpan = cardEl.querySelector('.resp');
                     const hasResponsavel = responsavelSpan && responsavelSpan.textContent.trim() !== '';
 
                     if (!hasResponsavel) {
                         alert('Para mover para "Iniciar", a tarefa precisa ter um Responsável atribuído.');
-                        // Reverte o movimento visualmente
                         evt.from.appendChild(cardEl);
-                        return; // Para a execução
+                        return;
                     }
-                    // Outras validações (datas, etc.) podem ser adicionadas aqui.
                 }
 
                 // Se a coluna não mudou, não faz nada

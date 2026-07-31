@@ -16,6 +16,7 @@ let recalculateTimeout = null;
 document.addEventListener('DOMContentLoaded', () => {
     initSortable();
     pushToUndoStack(initialTasks);
+    rebuildHierarchyUI();
     verificarConflitosDeFerias(); // Verificação inicial
 });
 
@@ -44,6 +45,7 @@ async function desfazer() {
     renderTable(prevState);
     await salvarTudo(false);
     updateUndoButton();
+    rebuildHierarchyUI();
     verificarConflitosDeFerias();
 }
 
@@ -104,6 +106,253 @@ function setStatus(text, colorClass) {
     statusDisplay.textContent = text;
     statusDisplay.className = `text-xs font-medium transition-all ${colorClass}`;
 }
+
+// --- HIERARQUIA PAI-FILHO ---
+
+/**
+ * Rebuilds the visual hierarchy UI after table changes.
+ * Adds proper CSS classes, expand/collapse buttons, and indentations.
+ */
+function rebuildHierarchyUI() {
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    // First pass: identify parent-child relationships
+    const childIds = new Set();
+    rows.forEach(tr => {
+        const parentId = tr.dataset.parentId;
+        if (parentId && parentId.trim()) {
+            childIds.add(tr.dataset.id);
+        }
+    });
+
+    // Second pass: apply classes and buttons
+    rows.forEach(tr => {
+        const rowId = tr.dataset.id;
+        const parentId = tr.dataset.parentId;
+
+        // Remove previous hierarchy classes
+        tr.classList.remove('task-child', 'has-children', 'children-hidden');
+
+        // Check if this row has children
+        const hasChildren = rows.some(r => r.dataset.parentId === rowId);
+        if (hasChildren) {
+            tr.classList.add('has-children');
+        }
+
+        // Check if this row is a child
+        if (parentId && parentId.trim()) {
+            tr.classList.add('task-child');
+        }
+
+        // Add expand/collapse button to parents
+        const nameCell = tr.querySelector('.task-name-cell');
+        if (nameCell) {
+            const existingBtn = nameCell.querySelector('.btn-expand');
+            if (existingBtn) existingBtn.remove();
+
+            if (hasChildren) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'btn-expand expanded';
+                btn.innerHTML = '▶';
+                btn.title = 'Recolher tarefas filhas';
+                btn.onclick = function(e) {
+                    e.stopPropagation();
+                    toggleChildrenVisibility(tr);
+                };
+                nameCell.insertBefore(btn, nameCell.firstChild);
+            }
+        }
+
+        // Update child toggle button appearance
+        const childBtn = tr.querySelector('.btn-child-toggle');
+        if (childBtn) {
+            if (parentId && parentId.trim()) {
+                childBtn.classList.add('is-child');
+                childBtn.title = 'Remover vínculo com tarefa pai';
+            } else {
+                childBtn.classList.remove('is-child');
+                childBtn.title = 'Tornar filha da linha acima';
+            }
+        }
+    });
+}
+
+/**
+ * Toggle children visibility for a parent row.
+ */
+function toggleChildrenVisibility(parentTr) {
+    const parentId = parentTr.dataset.id;
+    const btn = parentTr.querySelector('.btn-expand');
+    const isHidden = parentTr.classList.toggle('children-hidden');
+
+    if (btn) {
+        btn.classList.toggle('expanded', !isHidden);
+        btn.title = isHidden ? 'Expandir tarefas filhas' : 'Recolher tarefas filhas';
+    }
+
+    // Hide/show direct children only (one level)
+    let next = parentTr.nextElementSibling;
+    while (next) {
+        const nextParentId = next.dataset.parentId;
+        if (nextParentId === parentId) {
+            next.style.display = isHidden ? 'none' : '';
+            next = next.nextElementSibling;
+        } else {
+            break;
+        }
+    }
+}
+
+/**
+ * Set the current row as child of the row above it.
+ * If already a child, remove the parent-child relationship.
+ */
+function setAsChildOfAbove(tr) {
+    const prevTr = tr.previousElementSibling;
+    const currentParentId = tr.dataset.parentId;
+
+    // If already has a parent, remove the link (unlink)
+    if (currentParentId && currentParentId.trim()) {
+        tr.dataset.parentId = '';
+        const hiddenInput = tr.querySelector('[name="parent_id"]');
+        if (hiddenInput) hiddenInput.value = '';
+        rebuildHierarchyUI();
+        detectarMudanca(true);
+        return;
+    }
+
+    // Need a previous row to be the parent
+    if (!prevTr) {
+        alert('Não há linha acima para ser a tarefa pai.');
+        return;
+    }
+
+    const prevId = prevTr.dataset.id;
+    if (!prevId) return;
+
+    // Prevent circular reference: check if prev row is already a descendant of this row
+    if (wouldCreateCycle(tr.dataset.id, prevId)) {
+        alert('Não é possível criar esta relação pois geraria uma referência circular.');
+        return;
+    }
+
+    // Set parent_id
+    tr.dataset.parentId = prevId;
+    const hiddenInput = tr.querySelector('[name="parent_id"]');
+    if (hiddenInput) hiddenInput.value = prevId;
+
+    rebuildHierarchyUI();
+    detectarMudanca(true);
+}
+
+/**
+ * Check if setting `parentId` as parent of `childId` would create a cycle.
+ */
+function wouldCreateCycle(childId, parentId) {
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const adj = {};
+    rows.forEach(tr => {
+        const id = tr.dataset.id;
+        const pid = tr.dataset.parentId;
+        if (pid && pid.trim() && id !== childId) {
+            if (!adj[id]) adj[id] = [];
+            adj[id].push(pid);
+        }
+    });
+
+    // Also add the proposed relationship
+    if (!adj[childId]) adj[childId] = [];
+    adj[childId].push(parentId);
+
+    // DFS to detect cycle starting from parentId
+    const visited = new Set();
+    const stack = [parentId];
+    while (stack.length > 0) {
+        const current = stack.pop();
+        if (current === childId) return true; // Cycle detected
+        if (visited.has(current)) continue;
+        visited.add(current);
+        for (const neighbor of (adj[current] || [])) {
+            stack.push(neighbor);
+        }
+    }
+    return false;
+}
+
+/**
+ * Confirm before deleting a row that has children.
+ */
+function confirmDeleteRow(tr) {
+    const parentId = tr.dataset.id;
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const children = rows.filter(r => r.dataset.parentId === parentId);
+
+    if (children.length > 0) {
+        const taskName = tr.querySelector('[name="tarefa"]').value || `ID ${parentId}`;
+        const msg = `A tarefa "${taskName}" possui ${children.length} tarefa(s) filha(s).\n\n` +
+                    `[OK] - Manter as tarefas filhas (revinculadas ao pai da atual)\n` +
+                    `[Cancelar] - Cancelar a exclusão`;
+
+        if (!confirm(msg)) return;
+
+        // Reassign children to the parent of the deleted row (grandparent)
+        const grandparentId = tr.dataset.parentId || '';
+        children.forEach(childTr => {
+            childTr.dataset.parentId = grandparentId;
+            const childInput = childTr.querySelector('[name="parent_id"]');
+            if (childInput) childInput.value = grandparentId;
+        });
+    }
+
+    tr.remove();
+    rebuildHierarchyUI();
+    detectarMudanca(true);
+}
+
+// --- VERIFICAÇÃO DE CONFLITO DE FÉRIAS ---
+
+function verificarConflitosDeFerias() {
+    const mapaResponsaveis = responsaveis.reduce((map, r) => {
+        map[r.id] = r.ferias || [];
+        return map;
+    }, {});
+
+    tbody.querySelectorAll('tr').forEach(tr => {
+        const responsavelId = tr.querySelector('[name="responsavel"]').value;
+        const ferias = mapaResponsaveis[responsavelId] || [];
+
+        const inicioTarefa = new Date(tr.querySelector('[name="inicio"]').value);
+        const fimTarefa = new Date(tr.querySelector('[name="fim"]').value);
+
+        let conflito = false;
+        if (responsavelId && !isNaN(inicioTarefa) && !isNaN(fimTarefa)) {
+            for (const periodo of ferias) {
+                const inicioFerias = new Date(periodo.inicio);
+                const fimFerias = new Date(periodo.fim);
+                if (!isNaN(inicioFerias) && !isNaN(fimFerias)) {
+                    if (inicioTarefa <= fimFerias && fimTarefa >= inicioFerias) {
+                        conflito = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        ['inicio', 'fim', 'baseline_inicio', 'baseline_fim'].forEach(name => {
+            const input = tr.querySelector(`[name="${name}"]`);
+            const alertIcon = input.nextElementSibling;
+            if (conflito) {
+                input.classList.add('date-conflict');
+                if(alertIcon) alertIcon.classList.remove('hidden');
+            } else {
+                input.classList.remove('date-conflict');
+                if(alertIcon) alertIcon.classList.add('hidden');
+            }
+        });
+    });
+}
+
 
 // --- VALIDAÇÃO: DATA FIM NÃO PODE SER MENOR QUE DATA INÍCIO ---
 
@@ -220,49 +469,6 @@ function definirRestricaoManual(inputInicio) {
         }
     }
 }
-// --- VERIFICAÇÃO DE CONFLITO DE FÉRIAS ---
-
-function verificarConflitosDeFerias() {
-    const mapaResponsaveis = responsaveis.reduce((map, r) => {
-        map[r.id] = r.ferias || [];
-        return map;
-    }, {});
-
-    tbody.querySelectorAll('tr').forEach(tr => {
-        const responsavelId = tr.querySelector('[name="responsavel"]').value;
-        const ferias = mapaResponsaveis[responsavelId] || [];
-
-        const inicioTarefa = new Date(tr.querySelector('[name="inicio"]').value);
-        const fimTarefa = new Date(tr.querySelector('[name="fim"]').value);
-
-        let conflito = false;
-        if (responsavelId && !isNaN(inicioTarefa) && !isNaN(fimTarefa)) {
-            for (const periodo of ferias) {
-                const inicioFerias = new Date(periodo.inicio);
-                const fimFerias = new Date(periodo.fim);
-                if (!isNaN(inicioFerias) && !isNaN(fimFerias)) {
-                    if (inicioTarefa <= fimFerias && fimTarefa >= inicioFerias) {
-                        conflito = true;
-                        break;
-                    }
-                }
-            }
-        }
-
-        ['inicio', 'fim', 'baseline_inicio', 'baseline_fim'].forEach(name => {
-            const input = tr.querySelector(`[name="${name}"]`);
-            const alertIcon = input.nextElementSibling;
-            if (conflito) {
-                input.classList.add('date-conflict');
-                if(alertIcon) alertIcon.classList.remove('hidden');
-            } else {
-                input.classList.remove('date-conflict');
-                if(alertIcon) alertIcon.classList.add('hidden');
-            }
-        });
-    });
-}
-
 
 // --- MANIPULAÇÃO DA TABELA ---
 
@@ -275,13 +481,24 @@ function getTasksFromTable() {
             return v === '' ? null : v;
         };
         return {
-            id: tr.dataset.id, fase: get('fase'), modulo: get('modulo'), tarefa: get('tarefa'),
-            subtarefa: get('subtarefa'), inicio: get('inicio'), dias: get('dias'), fim: get('fim'),
-            predecessora: get('predecessora'), baseline_inicio: get('baseline_inicio'),
-            baseline_fim: get('baseline_fim'), responsavel_id: get('responsavel'), conclusao: get('conclusao'), 
+            id: tr.dataset.id,
+            tipo: get('tipo'),
+            fase: get('fase'),
+            modulo: get('modulo'),
+            tarefa: get('tarefa'),
+            subtarefa: get('subtarefa'),
+            inicio: get('inicio'),
+            dias: get('dias'),
+            fim: get('fim'),
+            predecessora: get('predecessora'),
+            baseline_inicio: get('baseline_inicio'),
+            baseline_fim: get('baseline_fim'),
+            responsavel_id: get('responsavel'),
+            conclusao: get('conclusao'),
             restricao_tipo: tr.dataset.restricaoTipo || null,
             restricao_data: tr.dataset.restricaoData || null,
-            kanban_coluna_id: get('kanban_coluna_id')
+            kanban_coluna_id: get('kanban_coluna_id'),
+            parent_id: tr.dataset.parentId || null
         };
     });
 }
@@ -292,25 +509,30 @@ function renderTable(tasks) {
         const row = document.createElement('tr');
         row.className = 'group transition-colors';
         row.dataset.id = task.id;
+        row.dataset.parentId = task.parent_id || '';
+        row.dataset.tipo = task.tipo || 'task';
         row.dataset.restricaoTipo = task.restricao_tipo || '';
         row.dataset.restricaoData = task.restricao_data || '';
         row.innerHTML = createTaskRowHtml(task);
         tbody.appendChild(row);
     });
+    rebuildHierarchyUI();
     verificarConflitosDeFerias();
 }
 
 function adicionarLinhaVazia() {
     const ids = Array.from(tbody.querySelectorAll('tr')).map(tr => parseInt(tr.dataset.id));
     const novoId = (ids.length > 0 ? Math.max(...ids) : 0) + 1;
-    const novaTarefa = { id: novoId, dias: 1, conclusao: 0, kanban_coluna_id: 'backlog' };
+    const novaTarefa = { id: novoId, dias: 1, conclusao: 0, kanban_coluna_id: 'backlog', parent_id: null };
     const row = document.createElement('tr');
     row.className = 'group transition-colors';
     row.dataset.id = novoId;
+    row.dataset.parentId = '';
     row.dataset.restricaoTipo = '';
     row.dataset.restricaoData = '';
     row.innerHTML = createTaskRowHtml(novaTarefa);
     tbody.appendChild(row);
+    rebuildHierarchyUI();
     detectarMudanca(true);
     row.querySelector('[name="tarefa"]').focus();
     row.scrollIntoView({ behavior: 'smooth' });
@@ -320,23 +542,88 @@ function createTaskRowHtml(t) {
     const responsaveisOptions = responsaveis.map(r =>
         `<option value="${r.id}" ${r.id === t.responsavel_id ? 'selected' : ''}>${r.nome}</option>`
     ).join('');
+    const isChild = t.parent_id ? true : false;
+    const tipoAtual = t.tipo || 'task';
+
+    // Nomes dos tipos em português
+    const tipoLabels = {
+        epic: 'Épico',
+        feature: 'Feature',
+        story: 'História',
+        task: 'Tarefa',
+        subtask: 'Subtarefa'
+    };
+
+    // Define as opções do dropdown de tipo baseado na hierarquia correta
+    const tipoOptions = `
+        <option value="epic" ${tipoAtual === 'epic' ? 'selected' : ''}>Épico</option>
+        <option value="feature" ${tipoAtual === 'feature' ? 'selected' : ''}>Feature</option>
+        <option value="story" ${tipoAtual === 'story' ? 'selected' : ''}>História</option>
+        <option value="task" ${tipoAtual === 'task' ? 'selected' : ''}>Tarefa</option>
+        <option value="subtask" ${tipoAtual === 'subtask' ? 'selected' : ''}>Subtarefa</option>
+    `;
 
     return `
         <td class="p-0 align-middle text-center handle border-r no-print"><div class="h-full flex items-center justify-center cursor-grab">⋮⋮</div></td>
         <td class="p-0 text-center text-xs font-mono border-r">${t.id}</td>
-        <td class="p-0 border-r"><input name="fase" value="${t.fase || ''}" class="sheet-input" oninput="detectarMudanca(false, event)"></td>
-        <td class="p-0 border-r"><input name="tarefa" value="${t.tarefa || 'Nova Tarefa'}" class="sheet-input" oninput="detectarMudanca(false, event)"></td>
-        <td class="p-0 border-r"><input name="subtarefa" value="${t.subtarefa || ''}" class="sheet-input" oninput="detectarMudanca(false, event)"></td>
-        <td class="p-0 border-r bg-blue-50/30"><input type="date" name="baseline_inicio" value="${t.baseline_inicio || ''}" class="sheet-input text-center" oninput="detectarMudanca(false, event)"></td>
-        <td class="p-0 border-r"><input type="number" name="dias" value="${t.dias || 1}" class="sheet-input text-center" oninput="detectarMudanca(true, event)"></td>
-        <td class="p-0 border-r bg-blue-50/30"><input type="date" name="baseline_fim" value="${t.baseline_fim || ''}" class="sheet-input text-center" oninput="detectarMudanca(false, event)"></td>
-        <td class="p-0 border-r"><input name="predecessora" value="${t.predecessora || ''}" class="sheet-input text-center" oninput="detectarMudanca(true, event)"></td>
-    <td class="p-0 border-r bg-amber-50/30 relative"><input type="date" name="inicio" value="${t.inicio || ''}" class="sheet-input text-center" oninput="handleInicioChange(this)"><span class="date-alert-icon hidden" title="Conflito com férias!">⚠️</span></td>
+        <td class="p-0 text-center border-r no-print">
+            <button type="button" class="btn-child-toggle ${isChild ? 'is-child' : ''}"
+                    onclick="setAsChildOfAbove(this.closest('tr'))"
+                    title="${isChild ? 'Remover vínculo com tarefa pai' : 'Tornar filha da linha acima'}">
+                ↳
+            </button>
+        </td>
+        <td class="p-0 border-r"><input name="fase" value="${t.fase || ''}" class="sheet-input" oninput="detectarMudanca()"></td>
+        <td class="p-0 border-r task-name-cell">
+            <span class="tipo-badge-planilha tipo-${tipoAtual}">${tipoLabels[tipoAtual] || 'Tarefa'}</span>
+            <input name="tarefa" value="${t.tarefa || 'Nova Tarefa'}" class="sheet-input" oninput="detectarMudanca()" style="display:inline;width:calc(100% - 70px);">
+        </td>
+        <td class="p-0 border-r"><input name="subtarefa" value="${t.subtarefa || ''}" class="sheet-input" oninput="detectarMudanca()"></td>
+        <td class="p-0 border-r bg-blue-50/30"><input type="date" name="baseline_inicio" value="${t.baseline_inicio || ''}" class="sheet-input text-center" oninput="detectarMudanca()"></td>
+        <td class="p-0 border-r"><input type="number" name="dias" value="${t.dias || 1}" class="sheet-input text-center" oninput="detectarMudanca(true)"></td>
+        <td class="p-0 border-r bg-blue-50/30"><input type="date" name="baseline_fim" value="${t.baseline_fim || ''}" class="sheet-input text-center" oninput="detectarMudanca()"></td>
+        <td class="p-0 border-r"><input name="predecessora" value="${t.predecessora_id || t.predecessora || ''}" class="sheet-input text-center" oninput="detectarMudanca(true)"></td>
+        <td class="p-0 border-r bg-amber-50/30 relative"><input type="date" name="inicio" value="${t.inicio || ''}" class="sheet-input text-center" oninput="handleInicioChange(this)"><span class="date-alert-icon hidden" title="Conflito com férias!">⚠️</span></td>
         <td class="p-0 border-r bg-amber-50/30 relative"><input type="date" name="fim" value="${t.fim || ''}" class="sheet-input text-center" oninput="detectarMudanca(true)"><span class="date-alert-icon hidden" title="Conflito com férias!">⚠️</span></td>
         <td class="p-0 border-r"><select name="responsavel" class="sheet-input" oninput="detectarMudanca(true)"><option value="">Nenhum</option>${responsaveisOptions}</select></td>
         <td class="p-0 border-r relative"><div class="progress-bar" style="width: ${t.conclusao || 0}%;"></div><input type="number" name="conclusao" value="${t.conclusao || 0}" class="sheet-input text-center" oninput="handleConclusionChange(this)"></td>
-        <td class="p-0 text-center no-print"><button onclick="this.closest('tr').remove(); detectarMudanca(true)" class="w-full h-full text-gray-300 hover:text-red-500">✕</button><input type="hidden" name="modulo" value="${t.modulo || ''}"><input type="hidden" name="kanban_coluna_id" value="${t.kanban_coluna_id || 'backlog'}"></td>
+        <td class="p-0 text-center no-print">
+            <div class="flex items-center gap-1 px-1">
+                <select name="tipo" class="tipo-select" onchange="onTipoChange(this)" title="Alterar tipo do item">
+                    ${tipoOptions}
+                </select>
+                <button onclick="confirmDeleteRow(this.closest('tr'))" class="w-6 h-6 flex items-center justify-center text-gray-300 hover:text-red-500 text-xs">✕</button>
+            </div>
+            <input type="hidden" name="modulo" value="${t.modulo || ''}">
+            <input type="hidden" name="kanban_coluna_id" value="${t.kanban_coluna_id || 'backlog'}">
+            <input type="hidden" name="parent_id" value="${t.parent_id || ''}">
+        </td>
     `;
+}
+
+// Função chamada quando o tipo é alterado - atualiza o dataset e badge
+function onTipoChange(select) {
+    const tr = select.closest('tr');
+    const novoValor = select.value;
+    tr.dataset.tipo = novoValor;
+    
+    // Atualiza o badge visual
+    const badge = tr.querySelector('.tipo-badge-planilha');
+    if (badge) {
+        const tipoLabels = {
+            epic: 'Épico',
+            feature: 'Feature',
+            story: 'História',
+            task: 'Tarefa',
+            subtask: 'Subtarefa'
+        };
+        // Remove all tipo classes
+        badge.className = badge.className.replace(/tipo-\w+/g, '');
+        badge.classList.add('tipo-badge-planilha', `tipo-${novoValor}`);
+        badge.textContent = tipoLabels[novoValor] || 'Tarefa';
+    }
+    
+    detectarMudanca(true);
 }
 
 // --- RECÁLCULO E ORDENAÇÃO ---
@@ -391,3 +678,4 @@ function ordenar(campo, tipo) {
     renderTable(tasks);
     detectarMudanca(false);
 }
+

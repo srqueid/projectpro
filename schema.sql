@@ -66,6 +66,7 @@ COMMENT ON TABLE ferias IS 'Armazena os períodos de férias de cada responsáve
 CREATE TABLE IF NOT EXISTS projetos (
     id VARCHAR(255) PRIMARY KEY,
     nome VARCHAR(255) NOT NULL,
+    descricao TEXT, -- Descrição do projeto (objetivo macro)
     time_id UUID REFERENCES times(id) ON DELETE SET NULL, -- Vínculo com o time
     criado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -95,6 +96,7 @@ CREATE TABLE IF NOT EXISTS tarefas (
     fim DATE,
     restricao_tipo VARCHAR(50),
     restricao_data DATE,
+    parent_id INTEGER,
     kanban_coluna_id VARCHAR(255),
     UNIQUE(projeto_id, id)
 );

@@ -62,6 +62,53 @@ def executar_migracoes():
         if _adicionar_coluna(cur, 'tarefas', 'kanban_coluna_id', 'VARCHAR(255)'):
             migracoes_aplicadas += 1
 
+        # ---------------------------------------------------------------
+        # Migração 005: Adicionar coluna 'parent_id' à tabela tarefas
+        # (auto-referência para hierarquia pai-filho)
+        # ---------------------------------------------------------------
+        if _adicionar_coluna(cur, 'tarefas', 'parent_id', 'INTEGER'):
+            migracoes_aplicadas += 1
+
+        # ---------------------------------------------------------------
+        # Migração 006: Adicionar coluna 'descricao' à tabela projetos
+        # ---------------------------------------------------------------
+        if _adicionar_coluna(cur, 'projetos', 'descricao', 'TEXT'):
+            migracoes_aplicadas += 1
+
+        # ---------------------------------------------------------------
+        # Migração 007: Adicionar coluna 'tipo' à tabela tarefas
+        # (epic, story, task)
+        # ---------------------------------------------------------------
+        if _adicionar_coluna(cur, 'tarefas', 'tipo', "VARCHAR(20) DEFAULT 'task'"):
+            migracoes_aplicadas += 1
+
+        # ---------------------------------------------------------------
+        # Migração 008: Adicionar coluna 'criterios_aceite' à tabela tarefas
+        # (critérios de aceite para User Stories)
+        # ---------------------------------------------------------------
+        if _adicionar_coluna(cur, 'tarefas', 'criterios_aceite', 'TEXT'):
+            migracoes_aplicadas += 1
+
+        # ---------------------------------------------------------------
+        # Migração 009: Adicionar coluna 'sprint' à tabela tarefas
+        # ---------------------------------------------------------------
+        if _adicionar_coluna(cur, 'tarefas', 'sprint', 'VARCHAR(100)'):
+            migracoes_aplicadas += 1
+
+        # ---------------------------------------------------------------
+        # Migração 010: Adicionar coluna 'planejado' à tabela tarefas
+        # (se está planejado para um sprint, mostra no Kanban)
+        # ---------------------------------------------------------------
+        if _adicionar_coluna(cur, 'tarefas', 'planejado', "BOOLEAN DEFAULT FALSE"):
+            migracoes_aplicadas += 1
+
+        # ---------------------------------------------------------------
+        # Migração 011: Adicionar coluna 'allow_back' à tabela kanban_colunas
+        # (permite ou não o movimento reverso na coluna)
+        # ---------------------------------------------------------------
+        if _adicionar_coluna(cur, 'kanban_colunas', 'allow_back', "BOOLEAN DEFAULT TRUE"):
+            migracoes_aplicadas += 1
+
     db.commit()
 
     if migracoes_aplicadas > 0:

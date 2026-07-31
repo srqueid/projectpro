@@ -71,6 +71,216 @@ tr:hover { background-color: #f1f5f9 !important; }
 .recalculando input { background-color: #fef3c7 !important; transition: background-color 0.3s; }
 @keyframes pulse-soft { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
+/* --- ESTILOS DE HIERARQUIA PAI-FILHO --- */
+/* Indicador visual de linha que tem filhos */
+tr.has-children > td:first-child .handle {
+    color: #6366f1;
+}
+/* Botão para definir como filho da linha acima */
+.btn-child-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    background: #f9fafb;
+    color: #6b7280;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    line-height: 1;
+}
+.btn-child-toggle:hover {
+    background: #6366f1;
+    border-color: #6366f1;
+    color: white;
+}
+.btn-child-toggle.is-child {
+    background: #6366f1;
+    border-color: #6366f1;
+    color: white;
+}
+
+/* Indentação visual para tarefas filhas */
+tr.task-child .task-name-cell {
+    padding-left: 24px !important;
+    position: relative;
+}
+tr.task-child .task-name-cell::before {
+    content: '↳';
+    position: absolute;
+    left: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #6366f1;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+/* Linha de conexão vertical para a hierarquia */
+tr.has-children > td:first-child {
+    position: relative;
+}
+tr.has-children > td:first-child::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    width: 2px;
+    height: 12px;
+    background: #6366f1;
+    opacity: 0.5;
+}
+
+/* Botão de expandir/recolher */
+.btn-expand {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: none;
+    background: transparent;
+    color: #6b7280;
+    cursor: pointer;
+    font-size: 10px;
+    transition: transform 0.2s;
+    padding: 0;
+    margin-right: 4px;
+}
+.btn-expand:hover {
+    color: #6366f1;
+}
+.btn-expand.expanded {
+    transform: rotate(90deg);
+}
+tr.children-hidden + tr.task-child,
+tr.children-hidden + tr.task-child + tr.task-child,
+tr.children-hidden + tr.task-child + tr.task-child + tr.task-child {
+    display: none;
+}
+
+/* Destaque para o pai quando tem filhos visíveis */
+tr.has-children > td {
+    border-bottom: 2px solid #e0e7ff;
+}
+
+/* --- ESTILOS DE TIPO (BADGES E CORES DE LINHA) --- */
+/* Badge de tipo no início da linha */
+.tipo-badge-planilha {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-right: 6px;
+    flex-shrink: 0;
+    line-height: 1.4;
+}
+.tipo-badge-planilha.tipo-epic {
+    background: #ede9fe;
+    color: #7c3aed;
+    border: 1px solid #c4b5fd;
+}
+.tipo-badge-planilha.tipo-feature {
+    background: #fff7ed;
+    color: #c2410c;
+    border: 1px solid #fed7aa;
+}
+.tipo-badge-planilha.tipo-story {
+    background: #dbeafe;
+    color: #2563eb;
+    border: 1px solid #93c5fd;
+}
+.tipo-badge-planilha.tipo-task {
+    background: #d1fae5;
+    color: #059669;
+    border: 1px solid #86efac;
+}
+.tipo-badge-planilha.tipo-subtask {
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+}
+
+/* Cores de fundo para linhas por tipo */
+tr[data-tipo="epic"] {
+    background-color: #f5f3ff !important;
+}
+tr[data-tipo="epic"]:hover {
+    background-color: #ede9fe !important;
+}
+tr[data-tipo="epic"] .sheet-input {
+    color: #5b21b6;
+}
+tr[data-tipo="feature"] {
+    background-color: #fff7ed !important;
+}
+tr[data-tipo="feature"]:hover {
+    background-color: #ffedd5 !important;
+}
+tr[data-tipo="feature"] .sheet-input {
+    color: #9a3412;
+}
+tr[data-tipo="story"] {
+    background-color: #eff6ff !important;
+}
+tr[data-tipo="story"]:hover {
+    background-color: #dbeafe !important;
+}
+tr[data-tipo="story"] .sheet-input {
+    color: #1e40af;
+}
+tr[data-tipo="task"] {
+    background-color: #f0fdf4 !important;
+}
+tr[data-tipo="task"]:hover {
+    background-color: #dcfce7 !important;
+}
+tr[data-tipo="task"] .sheet-input {
+    color: #166534;
+}
+tr[data-tipo="subtask"] {
+    background-color: #f8fafc !important;
+}
+tr[data-tipo="subtask"]:hover {
+    background-color: #f1f5f9 !important;
+}
+tr[data-tipo="subtask"] .sheet-input {
+    color: #334155;
+}
+
+/* Seletor de tipo dropdown */
+.tipo-select {
+    width: 100%;
+    background: transparent;
+    border: none;
+    padding: 6px 4px;
+    outline: none;
+    height: 100%;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.tipo-select:focus {
+    background: #ffffff;
+    box-shadow: inset 0 0 0 2px #3b82f6;
+}
+.tipo-select option {
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+}
+
 /* --- ESTILOS DE IMPRESSÃO (PDF) --- */
 @media print {
     @page { size: landscape; margin: 10mm; }

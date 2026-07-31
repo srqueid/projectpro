@@ -57,7 +57,7 @@ def excluir_responsavel(id):
 def carregar_projetos():
     db = database.get_db()
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-        cur.execute("SELECT id, nome FROM projetos ORDER BY nome")
+        cur.execute("SELECT id, nome, descricao FROM projetos ORDER BY nome")
         return [dict(row) for row in cur.fetchall()]
 
 def carregar_projeto_por_id(project_id):
@@ -66,10 +66,17 @@ def carregar_projeto_por_id(project_id):
         cur.execute("SELECT * FROM projetos WHERE id = %s", (project_id,))
         return dict(cur.fetchone()) if cur.rowcount > 0 else None
 
-def criar_projeto_db(project_id, nome):
+def criar_projeto_db(project_id, nome, descricao=''):
     db = database.get_db()
     with db.cursor() as cur:
-        cur.execute("INSERT INTO projetos (id, nome) VALUES (%s, %s) ON CONFLICT (id) DO NOTHING", (project_id, nome))
+        cur.execute("INSERT INTO projetos (id, nome, descricao) VALUES (%s, %s, %s) ON CONFLICT (id) DO NOTHING", (project_id, nome, descricao))
+    db.commit()
+
+def atualizar_descricao_projeto(project_id, descricao):
+    """Atualiza a descrição do projeto."""
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("UPDATE projetos SET descricao = %s WHERE id = %s", (descricao, project_id))
     db.commit()
 
 def excluir_projeto_db(project_id):
@@ -107,6 +114,38 @@ def _validar_datas_tarefa(t):
     return True, None
 
 
+def _validar_circular_reference(tarefas):
+    """
+    Valida que não existem referências circulares na hierarquia pai-filho.
+    Exemplo inválido: A é pai de B, B é pai de A (ou A -> B -> C -> A).
+    Levanta ValueError se encontrar ciclo.
+    """
+    # Construir mapa de adjacência
+    adj = {}
+    for t in tarefas:
+        tid = str(t.get('id'))
+        pid = t.get('parent_id')
+        if pid is not None and str(pid).strip():
+            pid_str = str(pid).strip()
+            if tid not in adj:
+                adj[tid] = []
+            adj[tid].append(pid_str)
+
+    # Detectar ciclo via DFS
+    for node in adj:
+        visited = set()
+        stack = [node]
+        while stack:
+            current = stack.pop()
+            if current in visited:
+                nome = next((t.get('tarefa') or t.get('subtarefa') or f"ID {t.get('id')}" for t in tarefas if str(t.get('id')) == current), current)
+                raise ValueError(f"Referência circular detectada na hierarquia envolvendo a tarefa '{nome}' (ID {current}).")
+            visited.add(current)
+            for neighbor in adj.get(current, []):
+                stack.append(neighbor)
+    return True
+
+
 def salvar_tarefas(project_id, tarefas):
     db = database.get_db()
     with db.cursor() as cur:
@@ -138,13 +177,23 @@ def salvar_tarefas(project_id, tarefas):
 
             kanban_coluna_id = t.get('kanban_coluna_id') or default_coluna_id
 
-            print(f"Inserindo tarefa id={task_id} predecessor={predecessora} responsavel={responsavel_id}")
+            # Tratar parent_id
+            parent_id = t.get('parent_id')
+            if parent_id == '' or parent_id is None:
+                parent_id = None
+            else:
+                try:
+                    parent_id = int(parent_id)
+                except (ValueError, TypeError):
+                    parent_id = None
+
+            print(f"Inserindo tarefa id={task_id} predecessor={predecessora} parent_id={parent_id} responsavel={responsavel_id}")
             cur.execute(
                 """
-                INSERT INTO tarefas (id, projeto_id, fase, modulo, tarefa, subtarefa, descricao, dias, predecessora_id, conclusao, responsavel_id, baseline_inicio, baseline_fim, inicio, fim, kanban_coluna_id, restricao_tipo, restricao_data)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO tarefas (id, projeto_id, fase, modulo, tarefa, subtarefa, descricao, dias, predecessora_id, conclusao, responsavel_id, baseline_inicio, baseline_fim, inicio, fim, kanban_coluna_id, restricao_tipo, restricao_data, parent_id, tipo, criterios_aceite, sprint, planejado)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (task_id, project_id, t.get('fase'), t.get('modulo'), t.get('tarefa'), t.get('subtarefa'), t.get('descricao'), int(t.get('dias') or 0), predecessora, int(t.get('conclusao') or 0), responsavel_id, t.get('baseline_inicio'), t.get('baseline_fim'), t.get('inicio'), t.get('fim'), kanban_coluna_id, t.get('restricao_tipo'), t.get('restricao_data'))
+                (task_id, project_id, t.get('fase'), t.get('modulo'), t.get('tarefa'), t.get('subtarefa'), t.get('descricao'), int(t.get('dias') or 0), predecessora, int(t.get('conclusao') or 0), responsavel_id, t.get('baseline_inicio'), t.get('baseline_fim'), t.get('inicio'), t.get('fim'), kanban_coluna_id, t.get('restricao_tipo'), t.get('restricao_data'), parent_id, t.get('tipo') or 'task', t.get('criterios_aceite'), t.get('sprint'), t.get('planejado', False))
             )
     db.commit()
 
@@ -169,6 +218,8 @@ def recalcular_datas_cascata(tarefas):
     - Usa a data real (inicio) como ponto de partida, se existir
     - Considera predecessoras (usa o baseline_fim da predecessora)
     - Aplica restrições manuais (RN015)
+    - Agrega datas das tarefas filhas nos pais: o pai começa no início da primeira filha
+      e termina no fim da última filha
     - Escreve o resultado em baseline_inicio/baseline_fim (datas planejadas)
     """
     mapa_tarefas = {str(t['id']): t for t in tarefas}
@@ -177,12 +228,22 @@ def recalcular_datas_cascata(tarefas):
     mapa_responsaveis = {r['id']: r for r in responsaveis}
     settings = carregar_settings()
 
+    # Build parent-child relationships
+    filhos_por_pai = {}
+    for t in tarefas:
+        pid = str(t.get('parent_id') or '').strip()
+        if pid:
+            if pid not in filhos_por_pai:
+                filhos_por_pai[pid] = []
+            filhos_por_pai[pid].append(t)
+
     alteracoes = True
     loops = 0
     while alteracoes and loops < 100:
         alteracoes = False
         loops += 1
         for t in tarefas:
+            tid = str(t['id'])
             if int(t.get('conclusao', 0)) == 100: continue
             responsavel_nome = t.get('responsavel_id')
             ferias = mapa_responsaveis.get(responsavel_nome, {}).get('ferias', [])
@@ -215,6 +276,33 @@ def recalcular_datas_cascata(tarefas):
                     t['baseline_inicio'] = novo_inicio_str
                     t['baseline_fim'] = novo_fim
                     alteracoes = True
+
+        # --- Aggregation step: parent dates are composed from children ---
+        for t in tarefas:
+            tid = str(t['id'])
+            if tid in filhos_por_pai and len(filhos_por_pai[tid]) > 0:
+                children = filhos_por_pai[tid]
+                child_dates = []
+                for c in children:
+                    c_inicio = c.get('baseline_inicio') or c.get('inicio')
+                    c_fim = c.get('baseline_fim') or c.get('fim')
+                    if c_inicio:
+                        child_dates.append((utils.str_to_date(c_inicio), utils.str_to_date(c_fim) if c_fim else None))
+                
+                if child_dates:
+                    # Parent starts when the earliest child starts
+                    earliest_start = min(d[0] for d in child_dates if d[0])
+                    # Parent ends when the latest child ends
+                    latest_end = max((d[1] for d in child_dates if d[1]), default=None)
+                    
+                    parent_inicio_str = utils.date_to_str(earliest_start) if earliest_start else t.get('baseline_inicio')
+                    parent_fim_str = utils.date_to_str(latest_end) if latest_end else t.get('baseline_fim')
+                    
+                    if t.get('baseline_inicio') != parent_inicio_str or t.get('baseline_fim') != parent_fim_str:
+                        t['baseline_inicio'] = parent_inicio_str
+                        t['baseline_fim'] = parent_fim_str
+                        alteracoes = True
+
     return tarefas
 
 def calcular_stats(tarefas):
@@ -274,11 +362,14 @@ def salvar_feriados_custom(lista_datas):
 def carregar_kanban_config(project_id):
     db = database.get_db()
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-        cur.execute("SELECT coluna_id, nome, tipo, progresso_padrao FROM kanban_colunas WHERE projeto_id = %s ORDER BY ordem", (project_id,))
+        cur.execute("SELECT coluna_id, nome, tipo, progresso_padrao, allow_back FROM kanban_colunas WHERE projeto_id = %s ORDER BY ordem", (project_id,))
         colunas = [dict(row) for row in cur.fetchall()]
+        # Converte allow_back para booleano
+        for col in colunas:
+            col['allow_back'] = col.get('allow_back', True) if col.get('allow_back') is not None else True
         if not colunas:
             # Se não houver configuração, retorna um padrão e salva para o projeto
-            default_config = {"colunas": [{"coluna_id": "backlog", "nome": "📋 Backlog", "tipo": "backlog", "progresso_padrao": 0}, {"coluna_id": "iniciar", "nome": "🚀 Iniciar", "tipo": "inicio", "progresso_padrao": 0}, {"coluna_id": "andamento", "nome": "⚙️ Em Andamento", "tipo": "meio", "progresso_padrao": 50}, {"coluna_id": "concluido", "nome": "✅ Concluído", "tipo": "fim", "progresso_padrao": 100}]}
+            default_config = {"colunas": [{"coluna_id": "backlog", "nome": "📋 Backlog", "tipo": "backlog", "progresso_padrao": 0, "allow_back": True}, {"coluna_id": "iniciar", "nome": "🚀 Iniciar", "tipo": "inicio", "progresso_padrao": 0, "allow_back": True}, {"coluna_id": "andamento", "nome": "⚙️ Em Andamento", "tipo": "meio", "progresso_padrao": 50, "allow_back": True}, {"coluna_id": "concluido", "nome": "✅ Concluído", "tipo": "fim", "progresso_padrao": 100, "allow_back": True}]}
             salvar_kanban_config(project_id, default_config)
             return default_config
         return {"colunas": colunas}
@@ -291,9 +382,12 @@ def salvar_kanban_config(project_id, config_data):
             # Garante que o progresso seja um inteiro ou nulo
             progresso = col.get('progresso_padrao')
             progresso = int(progresso) if progresso is not None and str(progresso).isdigit() else None
+            allow_back = col.get('allow_back', True)
+            if isinstance(allow_back, str):
+                allow_back = allow_back.lower() == 'true'
             cur.execute(
-                "INSERT INTO kanban_colunas (projeto_id, coluna_id, nome, tipo, ordem, progresso_padrao) VALUES (%s, %s, %s, %s, %s, %s)",
-                (project_id, col['coluna_id'], col['nome'], col['tipo'], i, progresso)
+                "INSERT INTO kanban_colunas (projeto_id, coluna_id, nome, tipo, ordem, progresso_padrao, allow_back) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (project_id, col['coluna_id'], col['nome'], col['tipo'], i, progresso, allow_back)
             )
     db.commit()
 
@@ -309,7 +403,28 @@ def associar_time_projeto(project_id, time_id):
         cur.execute("UPDATE projetos SET time_id = %s WHERE id = %s", (time_id if time_id else None, project_id))
     db.commit()
 
-def mover_card_kanban(project_id, card_id, coluna_destino_id):
+def replanejar_tarefa(project_id, card_id):
+    """
+    Replaneja uma tarefa que saiu da coluna 'Concluído':
+    - Se 'manter_data': mantém a data de fim real, mas volta para backlog/iniciar
+    - Se 'replanejar': limpa as datas reais (inicio/fim) e coloca no backlog para recalcular
+    """
+    db = database.get_db()
+    from datetime import datetime
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute(
+            "UPDATE tarefas SET conclusao = 0, kanban_coluna_id = 'backlog', inicio = NULL, fim = NULL WHERE projeto_id = %s AND id = %s",
+            (project_id, card_id)
+        )
+    db.commit()
+    # Recalcula o projeto
+    tarefas_atuais = carregar_tarefas(project_id)
+    tarefas_recalculadas = recalcular_datas_cascata(tarefas_atuais)
+    salvar_tarefas_recalculadas(project_id, tarefas_recalculadas)
+    return True
+
+
+def mover_card_kanban(project_id, card_id, coluna_destino_id, manter_data=False):
     db = database.get_db()
     from datetime import datetime
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
@@ -341,6 +456,11 @@ def mover_card_kanban(project_id, card_id, coluna_destino_id):
                 tipo_origem = col_orig['tipo']
 
         update_fields = {"kanban_coluna_id": coluna_destino_id}
+
+        # Se o card voltou para a coluna "Iniciar" (tipo 'inicio'), apaga as datas de início e fim
+        if tipo_dest == 'inicio':
+            update_fields['inicio'] = None
+            update_fields['fim'] = None
 
         # Se o card saiu da coluna "Iniciar" (tipo 'inicio') e NÃO voltou para "Backlog" (tipo 'backlog'),
         # insere a data de início se ainda não existir
@@ -378,10 +498,10 @@ def adicionar_tarefa(project_id, dados):
         next_id = cur.fetchone()[0]
         cur.execute(
             """
-            INSERT INTO tarefas (id, projeto_id, fase, modulo, tarefa, subtarefa, descricao, dias, predecessora_id, conclusao, responsavel_id, baseline_inicio, baseline_fim, inicio, fim, kanban_coluna_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO tarefas (id, projeto_id, fase, modulo, tarefa, subtarefa, descricao, dias, predecessora_id, conclusao, responsavel_id, baseline_inicio, baseline_fim, inicio, fim, kanban_coluna_id, parent_id, tipo, criterios_aceite, sprint, planejado)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            (next_id, project_id, dados.get('fase'), dados.get('modulo'), dados.get('tarefa'), dados.get('subtarefa'), dados.get('descricao'), dados.get('dias'), dados.get('predecessora_id'), dados.get('conclusao'), dados.get('responsavel_id'), dados.get('baseline_inicio'), dados.get('baseline_fim'), dados.get('inicio'), dados.get('fim'), dados.get('kanban_coluna_id'))
+            (next_id, project_id, dados.get('fase'), dados.get('modulo'), dados.get('tarefa'), dados.get('subtarefa'), dados.get('descricao'), dados.get('dias'), dados.get('predecessora_id'), dados.get('conclusao'), dados.get('responsavel_id'), dados.get('baseline_inicio'), dados.get('baseline_fim'), dados.get('inicio'), dados.get('fim'), dados.get('kanban_coluna_id'), dados.get('parent_id'), dados.get('tipo') or 'task', dados.get('criterios_aceite'), dados.get('sprint'), dados.get('planejado', False))
         )
     db.commit()
 

@@ -49,6 +49,7 @@
                     <tr>
                         <th class="p-0 w-10 text-center no-drag no-print"><span class="px-2">⋮⋮</span></th>
                         <th class="p-0 w-14 text-center sortable" onclick="ordenar('id', 'numero')">ID <span class="sort-icon">⇅</span></th>
+                        <th class="p-0 w-10 text-center no-print" title="Tornar filha da linha acima">↳</th>
                         <th class="p-0 sortable" onclick="ordenar('fase', 'texto')">Fase <span class="sort-icon">⇅</span></th>
                         <th class="p-0 sortable" onclick="ordenar('tarefa', 'texto')">Tarefa <span class="sort-icon">⇅</span></th>
                         <th class="p-0 sortable" onclick="ordenar('subtarefa', 'texto')">Subtarefa <span class="sort-icon">⇅</span></th>
@@ -65,15 +66,22 @@
                 </thead>
                 <tbody id="tabela-corpo">
                     {% for t in tarefas %}
-                    <tr class="group transition-colors" data-id="{{ t.id }}">
+                    <tr class="group transition-colors" data-id="{{ t.id }}" data-parent-id="{{ t.parent_id or '' }}" data-tipo="{{ t.tipo or 'task' }}">
                         <td class="p-0 align-middle text-center handle border-r no-print">
                             <div class="h-full flex items-center justify-center cursor-grab">⋮⋮</div>
                         </td>
                         <td class="p-0 text-center text-xs font-mono border-r">{{ t.id }}</td>
+                        <td class="p-0 text-center border-r no-print">
+                            <button type="button" class="btn-child-toggle {% if t.parent_id %}is-child{% endif %}"
+                                    onclick="setAsChildOfAbove(this.closest('tr'))"
+                                    title="{% if t.parent_id %}Remover vínculo com tarefa pai{% else %}Tornar filha da linha acima{% endif %}">
+                                {% if t.parent_id %}↳{% else %}↳{% endif %}
+                            </button>
+                        </td>
                         <td class="p-0 border-r">
                             <input name="fase" value="{{ t.fase or '' }}" class="sheet-input" oninput="detectarMudanca()">
                         </td>
-                        <td class="p-0 border-r">
+                        <td class="p-0 border-r task-name-cell">
                             <input name="tarefa" value="{{ t.tarefa or 'Nova Tarefa' }}" class="sheet-input" oninput="detectarMudanca()">
                         </td>
                         <td class="p-0 border-r">
@@ -89,7 +97,7 @@
                             <input type="date" name="baseline_fim" value="{{ t.baseline_fim or '' }}" class="sheet-input text-center" oninput="detectarMudanca()">
                         </td>
                         <td class="p-0 border-r">
-                            <input name="predecessora" value="{{ t.predecessora or '' }}" class="sheet-input text-center" oninput="detectarMudanca(true)">
+                            <input name="predecessora" value="{{ t.predecessora_id or '' }}" class="sheet-input text-center" oninput="detectarMudanca(true)">
                         </td>
                         <td class="p-0 border-r bg-amber-50/30 relative">
                             <input type="date" name="inicio" value="{{ t.inicio or '' }}" class="sheet-input text-center" oninput="handleInicioChange(this)">
@@ -112,9 +120,10 @@
                             <input type="number" name="conclusao" value="{{ t.conclusao or 0 }}" class="sheet-input text-center" oninput="handleConclusionChange(this)">
                         </td>
                         <td class="p-0 text-center no-print">
-                            <button onclick="this.closest('tr').remove(); detectarMudanca(true)" class="w-full h-full text-gray-300 hover:text-red-500">✕</button>
+                            <button onclick="confirmDeleteRow(this.closest('tr'))" class="w-full h-full text-gray-300 hover:text-red-500">✕</button>
                             <input type="hidden" name="modulo" value="{{ t.modulo or '' }}">
                             <input type="hidden" name="kanban_coluna_id" value="{{ t.kanban_coluna_id or 'backlog' }}">
+                            <input type="hidden" name="parent_id" value="{{ t.parent_id or '' }}">
                         </td>
                     </tr>
                     {% endfor %}
@@ -132,3 +141,4 @@
     </script>
     <script src="{{ url_for('static', filename='planilha.js') }}"></script>
 {% endblock %}
+

@@ -1,10 +1,16 @@
-# TODO - Correções de Bugs e Melhorias (CONCLUÍDO)
+# ✅ TODAS AS MELHORIAS IMPLEMENTADAS
 
-## ✅ Passos Concluídos
-- [x] **Bug 1 (Planilha):** Adicionar hidden field `kanban_coluna_id` no template Jinja2 `planilha.html` — estava faltando, causando `return` prematuro em `handleInicioChange()`
-- [x] **Bug 1 (Planilha):** Corrigir `handleInicioChange()` em `planilha.js` — remover `if (!kanbanColunaInput) return;` e forçar `detectarMudanca(true)` sempre que data de início mudar
-- [x] **Bug 2 (Kanban):** Expandir modal "Nova Tarefa" em `templates/kanban.html` com todos os campos: fase, subtarefa, responsável, dias, início, fim, conclusão, descrição
-- [x] **Bug 2 (Kanban):** Atualizar `static/kanban.js` para enviar todos os novos campos no submit do formulário
-- [x] **Migração Tailwind CDN → Build Local** (pacote anterior)
-- [x] **Correção CSS `planilha.css`** (pacote anterior)
+## Hierarquia: Épico > Feature > História > Tarefa > Subtarefa
+- ✅ `app/routes.py` - Filtros `features`/`subtasks` em `detalhes_projeto`
+- ✅ `templates/detalhes_projeto.html` - CSS badges, stats 6 colunas, seções, modal hierárquico
+- ✅ `templates/backlog.html` - Badges e filtros expandidos
+
+## Fluxo de Transição entre Colunas Kanban
+- ✅ `app/migrations.py` - Coluna `allow_back` adicionada
+- ✅ `app/project_manager.py` - `carregar_kanban_config()`/`salvar_kanban_config()` com `allow_back`
+- ✅ `app/project_manager.py` - `replanejar_tarefa()` + `mover_card_kanban()` com validação de fluxo
+- ✅ `app/routes.py` - Rota `/kanban_replanejar`
+- ✅ `static/kanban.js` - Validação `allow_back` no drag-and-drop, checkbox na config
+- ✅ `templates/kanban.html` - Botão config colunas, dialog replanejar
+
 

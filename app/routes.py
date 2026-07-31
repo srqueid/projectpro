@@ -30,10 +30,11 @@ def home():
 @main_bp.route('/criar_projeto', methods=['POST'])
 def criar_projeto():
     nome = request.form.get('nome_projeto')
+    descricao = request.form.get('descricao_projeto', '')
     if not nome:
         return redirect(url_for('main.home'))
     project_id = secure_filename(nome)
-    project_manager.criar_projeto_db(project_id, nome)
+    project_manager.criar_projeto_db(project_id, nome, descricao)
     
     arquivo_csv = request.files.get('arquivo_csv')
     if arquivo_csv and arquivo_csv.filename != '':
@@ -49,6 +50,46 @@ def criar_projeto():
         except Exception as e:
             print(f"Erro ao processar CSV: {e}")
     return redirect(url_for('main.planilha', project_id=project_id))
+
+@main_bp.route('/projeto/<project_id>/detalhes')
+def detalhes_projeto(project_id):
+    """Página de detalhes do projeto com descrição, épicos e histórias."""
+    projeto = project_manager.carregar_projeto_por_id(project_id)
+    tarefas = project_manager.carregar_tarefas(project_id)
+    responsaveis = project_manager.carregar_responsaveis()
+    
+    # Separa por tipo
+    epics = [t for t in tarefas if t.get('tipo') == 'epic']
+    features = [t for t in tarefas if t.get('tipo') == 'feature']
+    stories = [t for t in tarefas if t.get('tipo') == 'story']
+    tasks = [t for t in tarefas if t.get('tipo') == 'task' or not t.get('tipo')]
+    subtasks = [t for t in tarefas if t.get('tipo') == 'subtask']
+    
+    stats = project_manager.calcular_stats(tarefas)
+    return render_template('detalhes_projeto.html', project_id=project_id, projeto=projeto, 
+                          epics=epics, features=features, stories=stories, tasks=tasks, subtasks=subtasks,
+                          stats=stats, responsaveis=responsaveis, page='detalhes')
+
+@main_bp.route('/projeto/<project_id>/atualizar_descricao', methods=['POST'])
+def atualizar_descricao_projeto(project_id):
+    descricao = request.form.get('descricao', '')
+    project_manager.atualizar_descricao_projeto(project_id, descricao)
+    return redirect(url_for('main.detalhes_projeto', project_id=project_id))
+
+@main_bp.route('/projeto/<project_id>/backlog')
+def backlog(project_id):
+    """Página de backlog - mostra itens não planejados."""
+    tarefas = project_manager.carregar_tarefas(project_id)
+    responsaveis = project_manager.carregar_responsaveis()
+    
+    # Filtra apenas itens não planejados
+    backlog_items = [t for t in tarefas if not t.get('planejado')]
+    planned_items = [t for t in tarefas if t.get('planejado')]
+    
+    stats = project_manager.calcular_stats(tarefas)
+    return render_template('backlog.html', project_id=project_id, 
+                          backlog_items=backlog_items, planned_items=planned_items,
+                          stats=stats, responsaveis=responsaveis, page='backlog')
 
 @main_bp.route('/excluir_projeto/<project_id>', methods=['POST'])
 def excluir_projeto(project_id):
@@ -193,6 +234,8 @@ def associar_time_projeto(project_id):
 @main_bp.route('/projeto/<project_id>/kanban')
 def kanban(project_id):
     tarefas = project_manager.carregar_tarefas(project_id)
+    # Mostra apenas tarefas planejadas (com sprint definido) no Kanban
+    tarefas = [t for t in tarefas if t.get('planejado')]
     kanban_config = project_manager.carregar_kanban_config(project_id)
     colunas = kanban_config.get('colunas', [])
     mapa_tipos_coluna = {col['coluna_id']: col['tipo'] for col in colunas}
@@ -310,8 +353,18 @@ def recalcular_rapido(project_id):
 @main_bp.route('/projeto/<project_id>/kanban_mover_card', methods=['POST'])
 def kanban_mover_card(project_id):
     data = request.get_json()
-    project_manager.mover_card_kanban(project_id, data['card_id'], data['coluna_destino'])
+    project_manager.mover_card_kanban(project_id, data['card_id'], data['coluna_destino'], manter_data=data.get('manter_data', False))
     return jsonify({"status": "sucesso"}), 200
+
+@main_bp.route('/projeto/<project_id>/kanban_replanejar', methods=['POST'])
+def kanban_replanejar(project_id):
+    """Replaneja uma tarefa saindo da coluna Concluído - limpa datas e volta ao backlog."""
+    data = request.get_json()
+    card_id = data.get('card_id')
+    if card_id:
+        project_manager.replanejar_tarefa(project_id, card_id)
+        return jsonify({"status": "sucesso"}), 200
+    return jsonify({"status": "erro", "mensagem": "card_id não informado"}), 400
 
 @main_bp.route('/projeto/<project_id>/kanban/salvar_config', methods=['POST'])
 def kanban_salvar_config(project_id):
@@ -336,6 +389,24 @@ def editar_tarefa_kanban(project_id, task_id):
         tarefas_recalculadas = project_manager.recalcular_datas_cascata(tarefas_atuais)
         project_manager.salvar_tarefas_recalculadas(project_id, tarefas_recalculadas)
 
+    return jsonify({"status": "sucesso"}), 200
+
+@main_bp.route('/projeto/<project_id>/planejar_tarefa', methods=['POST'])
+def planejar_tarefa(project_id):
+    """Marca uma tarefa como planejada (para um sprint) ou remove do planejamento."""
+    dados = request.get_json()
+    task_id = dados.get('task_id')
+    sprint = dados.get('sprint', '')
+    planejado = dados.get('planejado', True)
+    
+    from . import database
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE tarefas SET planejado = %s, sprint = %s WHERE projeto_id = %s AND id = %s",
+            (planejado, sprint if sprint else None, project_id, task_id)
+        )
+    db.commit()
     return jsonify({"status": "sucesso"}), 200
 
 @main_bp.route('/projeto/<project_id>/tarefa/<task_pk_id>/adicionar_comentario', methods=['POST'])

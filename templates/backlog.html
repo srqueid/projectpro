@@ -1,0 +1,230 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<style>
+    .backlog-item {
+        transition: all 0.2s;
+    }
+    .backlog-item:hover {
+        transform: translateX(4px);
+    }
+    .tipo-badge {
+        font-size: 0.65rem;
+        font-weight: 600;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        text-transform: uppercase;
+    }
+    .tipo-epic { background: #ede9fe; color: #7c3aed; }
+    .tipo-feature { background: #ffedd5; color: #c2410c; }
+    .tipo-story { background: #dbeafe; color: #2563eb; }
+    .tipo-task { background: #d1fae5; color: #059669; }
+    .tipo-subtask { background: #f3f4f6; color: #4b5563; }
+    .planejado-badge {
+        background: #fef3c7;
+        color: #b45309;
+        font-size: 0.65rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        font-weight: 600;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0 shadow-sm z-10">
+    <div>
+        <h1 class="text-lg font-bold text-slate-800">📋 Backlog</h1>
+        <p class="text-xs text-slate-500 capitalize">{{ project_id }}</p>
+    </div>
+    <div class="flex items-center gap-3">
+        <a href="{{ url_for('main.detalhes_projeto', project_id=project_id) }}" class="flex items-center gap-2 text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200">
+            Detalhes do Projeto
+        </a>
+        <a href="{{ url_for('main.planilha', project_id=project_id) }}" class="flex items-center gap-2 text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200">
+            Planilha
+        </a>
+        <a href="{{ url_for('main.kanban', project_id=project_id) }}" class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm transition-all">
+            Ver Kanban
+        </a>
+    </div>
+</header>
+
+<div class="flex-1 overflow-auto p-6">
+    <div class="max-w-6xl mx-auto space-y-8">
+
+        <!-- Itens Planejados -->
+        <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-bold text-slate-800">✅ Planejados ({{ planned_items|length }})</h2>
+            </div>
+            {% if planned_items %}
+            <div class="space-y-2">
+                {% for t in planned_items %}
+                <div class="backlog-item flex items-center justify-between p-3 bg-blue-50/30 rounded-lg border border-blue-100">
+                    <div class="flex items-center gap-3 flex-1">
+                        <span class="tipo-badge tipo-{{ t.tipo or 'task' }}">
+                            {% if t.tipo == 'epic' %}Épico
+                            {% elif t.tipo == 'feature' %}Feature
+                            {% elif t.tipo == 'story' %}História
+                            {% elif t.tipo == 'subtask' %}Subtarefa
+                            {% else %}Tarefa{% endif %}
+                        </span>
+                        <span class="font-medium text-slate-800">{{ t.tarefa or t.subtarefa or 'Sem nome' }}</span>
+                        {% if t.sprint %}
+                        <span class="planejado-badge">{{ t.sprint }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="flex items-center gap-3 text-xs text-slate-500">
+                        <span>📊 {{ t.conclusao or 0 }}%</span>
+                        <span class="font-mono">#{{ t.id }}</span>
+                        <button onclick="desplanejar({{ t.id }})" class="text-amber-600 hover:text-amber-800 font-medium px-2 py-1 hover:bg-amber-50 rounded transition-all" title="Remover do planejamento">
+                            Mover para Backlog
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-sm text-slate-500 text-center py-8">Nenhum item planejado ainda. Arraste itens do backlog para planejar.</p>
+            {% endif %}
+        </div>
+
+        <!-- Backlog (Itens Não Planejados) -->
+        <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-bold text-slate-800">📦 Backlog ({{ backlog_items|length }})</h2>
+                <div class="flex gap-2">
+                    <select id="filtro-tipo" onchange="filtrarBacklog()" class="text-sm border-gray-300 rounded-lg px-3 py-2">
+                        <option value="todos">Todos os tipos</option>
+                        <option value="epic">Épicos</option>
+                        <option value="feature">Features</option>
+                        <option value="story">Histórias</option>
+                        <option value="task">Tarefas</option>
+                        <option value="subtask">Subtarefas</option>
+                    </select>
+                </div>
+            </div>
+            {% if backlog_items %}
+            <div class="space-y-2" id="lista-backlog">
+                {% for t in backlog_items %}
+                <div class="backlog-item flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-blue-300 backlog-tipo" data-tipo="{{ t.tipo or 'task' }}">
+                    <div class="flex items-center gap-3 flex-1">
+                        <span class="tipo-badge tipo-{{ t.tipo or 'task' }}">
+                            {% if t.tipo == 'epic' %}Épico
+                            {% elif t.tipo == 'feature' %}Feature
+                            {% elif t.tipo == 'story' %}História
+                            {% elif t.tipo == 'subtask' %}Subtarefa
+                            {% else %}Tarefa{% endif %}
+                        </span>
+                        <span class="font-medium text-slate-800">{{ t.tarefa or t.subtarefa or 'Sem nome' }}</span>
+                        {% if t.responsavel_id %}
+                        {% set resp = responsaveis | selectattr('id', 'equalto', t.responsavel_id) | first %}
+                        {% if resp %}
+                        <span class="text-xs text-slate-500">👤 {{ resp.nome }}</span>
+                        {% endif %}
+                        {% endif %}
+                    </div>
+                    <div class="flex items-center gap-3 text-xs text-slate-500">
+                        <span>📊 {{ t.conclusao or 0 }}%</span>
+                        <span class="font-mono">#{{ t.id }}</span>
+                        <button onclick="planejar({{ t.id }})" class="text-blue-600 hover:text-blue-800 font-medium px-2 py-1 hover:bg-blue-50 rounded transition-all" title="Planejar para um sprint">
+                            Planejar ➔
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-sm text-slate-500 text-center py-8">Nenhum item no backlog. Todos os itens estão planejados ou o projeto está vazio.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Planejamento -->
+<dialog id="modal-planejar" class="modal-config">
+    <div class="modal-body">
+        <h3 class="font-bold text-lg mb-4">📅 Planejar Item</h3>
+        <form id="form-planejar">
+            <input type="hidden" id="task-id-planejar">
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Sprint</label>
+                    <input type="text" id="sprint-planejar" class="mt-1 w-full input-field" placeholder="Ex: Sprint 1" required>
+                    <p class="text-xs text-slate-500 mt-1">Defina o sprint para este item. Itens planejados aparecerão no Kanban.</p>
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 mt-6">
+                <button type="button" onclick="document.getElementById('modal-planejar').close()" class="btn-secondary">Cancelar</button>
+                <button type="submit" class="btn-primary">Planejar</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<script>
+const projectId = "{{ project_id }}";
+let taskIdParaPlanejar = null;
+
+function planejar(taskId) {
+    taskIdParaPlanejar = taskId;
+    document.getElementById('task-id-planejar').value = taskId;
+    document.getElementById('sprint-planejar').value = '';
+    document.getElementById('modal-planejar').showModal();
+}
+
+async function desplanejar(taskId) {
+    if (!confirm('Remover este item do planejamento? Ele voltará para o backlog.')) return;
+    
+    try {
+        const response = await fetch(`/projeto/${projectId}/planejar_tarefa`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task_id: taskId, planejado: false, sprint: '' })
+        });
+        if (response.ok) location.reload();
+        else alert('Erro ao desplanejar.');
+    } catch (e) {
+        console.error('Erro:', e);
+        alert('Erro de conexão.');
+    }
+}
+
+document.getElementById('form-planejar').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const sprint = document.getElementById('sprint-planejar').value.trim();
+    if (!sprint) { alert('Informe o nome do sprint.'); return; }
+    
+    try {
+        const response = await fetch(`/projeto/${projectId}/planejar_tarefa`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                task_id: taskIdParaPlanejar, 
+                planejado: true, 
+                sprint: sprint 
+            })
+        });
+        if (response.ok) {
+            document.getElementById('modal-planejar').close();
+            location.reload();
+        } else {
+            alert('Erro ao planejar.');
+        }
+    } catch (e) {
+        console.error('Erro:', e);
+        alert('Erro de conexão.');
+    }
+});
+
+function filtrarBacklog() {
+    const filtro = document.getElementById('filtro-tipo').value;
+    document.querySelectorAll('.backlog-tipo').forEach(el => {
+        const tipo = el.dataset.tipo;
+        el.style.display = (filtro === 'todos' || tipo === filtro) ? '' : 'none';
+    });
+}
+</script>
+{% endblock %}
+
