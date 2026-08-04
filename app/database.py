@@ -11,6 +11,11 @@ def get_db():
     """
     if 'db' not in g:
         g.db = psycopg2.connect(config.DATABASE_URI)
+        # Configura o search_path para os schemas por domínio (a extensão uuid-ossp
+        # permanece acessível via 'public' incluído no search_path).
+        with g.db.cursor() as cur:
+            cur.execute("SET search_path TO " + ", ".join(config.SEARCH_PATH))
+            g.db.commit()
     return g.db
 
 def close_db(e=None):
@@ -38,7 +43,7 @@ def init_db_command():
     conn = psycopg2.connect(config.DATABASE_URI)
     conn.autocommit = True
     with conn.cursor() as cur:
-        with open('schema.sql', 'r') as f:
+        with open('schema.sql', 'r', encoding='utf-8') as f:
             cur.execute(f.read())
     conn.close()
     print('Banco de dados inicializado.')

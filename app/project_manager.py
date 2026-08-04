@@ -12,10 +12,10 @@ from . import config, utils, database
 def carregar_responsaveis():
     db = database.get_db()
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-        cur.execute("SELECT * FROM responsaveis ORDER BY nome")
+        cur.execute("SELECT * FROM rh.responsaveis ORDER BY nome")
         responsaveis = [dict(row) for row in cur.fetchall()]
         for r in responsaveis:
-            cur.execute("SELECT inicio, fim FROM ferias WHERE responsavel_id = %s", (r['id'],))
+            cur.execute("SELECT inicio, fim FROM rh.ferias WHERE responsavel_id = %s", (r['id'],))
             r['ferias'] = [dict(row) for row in cur.fetchall()]
     return responsaveis
 
@@ -24,12 +24,12 @@ def adicionar_responsavel(dados):
     horas_semanais = dados.get('horas_semanais') or None
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO responsaveis (nome, email, modelo_trabalho, horas_semanais) VALUES (%s, %s, %s, %s) RETURNING id",
+            "INSERT INTO rh.responsaveis (nome, email, modelo_trabalho, horas_semanais) VALUES (%s, %s, %s, %s) RETURNING id",
             (dados['nome'], dados['email'], dados['modelo_trabalho'], horas_semanais)
         )
         responsavel_id = cur.fetchone()[0]
         for periodo in dados.get('ferias', []):
-            cur.execute("INSERT INTO ferias (responsavel_id, inicio, fim) VALUES (%s, %s, %s)", (responsavel_id, periodo['inicio'], periodo['fim']))
+            cur.execute("INSERT INTO rh.ferias (responsavel_id, inicio, fim) VALUES (%s, %s, %s)", (responsavel_id, periodo['inicio'], periodo['fim']))
     db.commit()
 
 def editar_responsavel(id, dados):
@@ -37,18 +37,18 @@ def editar_responsavel(id, dados):
     horas_semanais = dados.get('horas_semanais') or None
     with db.cursor() as cur:
         cur.execute(
-            "UPDATE responsaveis SET nome = %s, email = %s, modelo_trabalho = %s, horas_semanais = %s WHERE id = %s",
+            "UPDATE rh.responsaveis SET nome = %s, email = %s, modelo_trabalho = %s, horas_semanais = %s WHERE id = %s",
             (dados['nome'], dados['email'], dados['modelo_trabalho'], horas_semanais, id)
         )
-        cur.execute("DELETE FROM ferias WHERE responsavel_id = %s", (id,))
+        cur.execute("DELETE FROM rh.ferias WHERE responsavel_id = %s", (id,))
         for periodo in dados.get('ferias', []):
-            cur.execute("INSERT INTO ferias (responsavel_id, inicio, fim) VALUES (%s, %s, %s)", (id, periodo['inicio'], periodo['fim']))
+            cur.execute("INSERT INTO rh.ferias (responsavel_id, inicio, fim) VALUES (%s, %s, %s)", (id, periodo['inicio'], periodo['fim']))
     db.commit()
 
 def excluir_responsavel(id):
     db = database.get_db()
     with db.cursor() as cur:
-        cur.execute("DELETE FROM responsaveis WHERE id = %s", (id,))
+        cur.execute("DELETE FROM rh.responsaveis WHERE id = %s", (id,))
     db.commit()
 
 # =============================================================================
@@ -57,38 +57,38 @@ def excluir_responsavel(id):
 def carregar_projetos():
     db = database.get_db()
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-        cur.execute("SELECT id, nome, descricao FROM projetos ORDER BY nome")
+        cur.execute("SELECT id, nome, descricao FROM projeto.projetos ORDER BY nome")
         return [dict(row) for row in cur.fetchall()]
 
 def carregar_projeto_por_id(project_id):
     db = database.get_db()
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-        cur.execute("SELECT * FROM projetos WHERE id = %s", (project_id,))
+        cur.execute("SELECT * FROM projeto.projetos WHERE id = %s", (project_id,))
         return dict(cur.fetchone()) if cur.rowcount > 0 else None
 
 def criar_projeto_db(project_id, nome, descricao=''):
     db = database.get_db()
     with db.cursor() as cur:
-        cur.execute("INSERT INTO projetos (id, nome, descricao) VALUES (%s, %s, %s) ON CONFLICT (id) DO NOTHING", (project_id, nome, descricao))
+        cur.execute("INSERT INTO projeto.projetos (id, nome, descricao) VALUES (%s, %s, %s) ON CONFLICT (id) DO NOTHING", (project_id, nome, descricao))
     db.commit()
 
 def atualizar_descricao_projeto(project_id, descricao):
     """Atualiza a descrição do projeto."""
     db = database.get_db()
     with db.cursor() as cur:
-        cur.execute("UPDATE projetos SET descricao = %s WHERE id = %s", (descricao, project_id))
+        cur.execute("UPDATE projeto.projetos SET descricao = %s WHERE id = %s", (descricao, project_id))
     db.commit()
 
 def excluir_projeto_db(project_id):
     db = database.get_db()
     with db.cursor() as cur:
-        cur.execute("DELETE FROM projetos WHERE id = %s", (project_id,))
+        cur.execute("DELETE FROM projeto.projetos WHERE id = %s", (project_id,))
     db.commit()
 
 def carregar_tarefas(project_id):
     db = database.get_db()
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-        cur.execute("SELECT * FROM tarefas WHERE projeto_id = %s ORDER BY id", (project_id,))
+        cur.execute("SELECT * FROM projeto.tarefas WHERE projeto_id = %s ORDER BY id", (project_id,))
         return [dict(row) for row in cur.fetchall()]
 
 def _validar_datas_tarefa(t):
@@ -149,7 +149,7 @@ def _validar_circular_reference(tarefas):
 def salvar_tarefas(project_id, tarefas):
     db = database.get_db()
     with db.cursor() as cur:
-        cur.execute("DELETE FROM tarefas WHERE projeto_id = %s", (project_id,))
+        cur.execute("DELETE FROM projeto.tarefas WHERE projeto_id = %s", (project_id,))
         default_coluna_id = carregar_kanban_config(project_id)['colunas'][0]['coluna_id']
         for t in tarefas:
             # Validar datas
@@ -190,7 +190,7 @@ def salvar_tarefas(project_id, tarefas):
             print(f"Inserindo tarefa id={task_id} predecessor={predecessora} parent_id={parent_id} responsavel={responsavel_id}")
             cur.execute(
                 """
-                INSERT INTO tarefas (id, projeto_id, fase, modulo, tarefa, subtarefa, descricao, dias, predecessora_id, conclusao, responsavel_id, baseline_inicio, baseline_fim, inicio, fim, kanban_coluna_id, restricao_tipo, restricao_data, parent_id, tipo, criterios_aceite, sprint, planejado)
+                INSERT INTO projeto.tarefas (id, projeto_id, fase, modulo, tarefa, subtarefa, descricao, dias, predecessora_id, conclusao, responsavel_id, baseline_inicio, baseline_fim, inicio, fim, kanban_coluna_id, restricao_tipo, restricao_data, parent_id, tipo, criterios_aceite, sprint, planejado)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (task_id, project_id, t.get('fase'), t.get('modulo'), t.get('tarefa'), t.get('subtarefa'), t.get('descricao'), int(t.get('dias') or 0), predecessora, int(t.get('conclusao') or 0), responsavel_id, t.get('baseline_inicio'), t.get('baseline_fim'), t.get('inicio'), t.get('fim'), kanban_coluna_id, t.get('restricao_tipo'), t.get('restricao_data'), parent_id, t.get('tipo') or 'task', t.get('criterios_aceite'), t.get('sprint'), t.get('planejado', False))
@@ -207,7 +207,7 @@ def salvar_tarefas_recalculadas(project_id, tarefas):
     with db.cursor() as cur:
         for t in tarefas:
             cur.execute(
-                "UPDATE tarefas SET baseline_inicio = %s, baseline_fim = %s, restricao_tipo = %s, restricao_data = %s WHERE projeto_id = %s AND id = %s",
+                "UPDATE projeto.tarefas SET baseline_inicio = %s, baseline_fim = %s, restricao_tipo = %s, restricao_data = %s WHERE projeto_id = %s AND id = %s",
                 (t.get('baseline_inicio'), t.get('baseline_fim'), t.get('restricao_tipo'), t.get('restricao_data'), project_id, t['id'])
             )
     db.commit()
@@ -314,25 +314,42 @@ def calcular_stats(tarefas):
     return {'total': total, 'completed': completed, 'in_progress': in_progress, 'avg': avg}
 
 # =============================================================================
-# (As funções abaixo ainda usam arquivos JSON e serão migradas depois)
+# CONFIGURAÇÕES GLOBAIS E FERIADOS (schema config)
 # =============================================================================
 def carregar_settings():
     db = database.get_db()
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-        cur.execute("SELECT valor FROM configuracoes WHERE chave = 'block_weekends'")
+        cur.execute("SELECT valor FROM config.configuracoes WHERE chave = 'block_weekends'")
         row = cur.fetchone()
         return {"block_weekends": row['valor'] == 'true'} if row else {"block_weekends": True}
 
 def salvar_settings(settings):
     db = database.get_db()
     with db.cursor() as cur:
-        cur.execute("UPDATE configuracoes SET valor = %s WHERE chave = 'block_weekends'", (str(settings['block_weekends']).lower(),))
+        cur.execute("UPDATE config.configuracoes SET valor = %s WHERE chave = 'block_weekends'", (str(settings['block_weekends']).lower(),))
     db.commit()
 
+def carregar_feriados_custom():
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("SELECT data FROM config.feriados_customizados")
+        return {row[0].strftime('%Y-%m-%d') for row in cur.fetchall()}
+
+def salvar_feriados_custom(lista_datas):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM config.feriados_customizados")
+        for data in lista_datas:
+            cur.execute("INSERT INTO config.feriados_customizados (data) VALUES (%s)", (data,))
+    db.commit()
+
+# =============================================================================
+# CONFIGURAÇÕES POR PROJETO E KANBAN (schema projeto)
+# =============================================================================
 def carregar_config_projeto(project_id):
     db = database.get_db()
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-        cur.execute("SELECT chave, valor FROM projeto_configuracoes WHERE projeto_id = %s", (project_id,))
+        cur.execute("SELECT chave, valor FROM projeto.projeto_configuracoes WHERE projeto_id = %s", (project_id,))
         rows = cur.fetchall()
         config = {}
         for row in rows:
@@ -342,27 +359,13 @@ def carregar_config_projeto(project_id):
 def salvar_config_projeto(project_id, chave, valor):
     db = database.get_db()
     with db.cursor() as cur:
-        cur.execute("INSERT INTO projeto_configuracoes (projeto_id, chave, valor) VALUES (%s, %s, %s) ON CONFLICT (projeto_id, chave) DO UPDATE SET valor = EXCLUDED.valor", (project_id, chave, str(valor)))
-    db.commit()
-
-def carregar_feriados_custom():
-    db = database.get_db()
-    with db.cursor() as cur:
-        cur.execute("SELECT data FROM feriados_customizados")
-        return {row[0].strftime('%Y-%m-%d') for row in cur.fetchall()}
-
-def salvar_feriados_custom(lista_datas):
-    db = database.get_db()
-    with db.cursor() as cur:
-        cur.execute("DELETE FROM feriados_customizados")
-        for data in lista_datas:
-            cur.execute("INSERT INTO feriados_customizados (data) VALUES (%s)", (data,))
+        cur.execute("INSERT INTO projeto.projeto_configuracoes (projeto_id, chave, valor) VALUES (%s, %s, %s) ON CONFLICT (projeto_id, chave) DO UPDATE SET valor = EXCLUDED.valor", (project_id, chave, str(valor)))
     db.commit()
 
 def carregar_kanban_config(project_id):
     db = database.get_db()
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-        cur.execute("SELECT coluna_id, nome, tipo, progresso_padrao, allow_back FROM kanban_colunas WHERE projeto_id = %s ORDER BY ordem", (project_id,))
+        cur.execute("SELECT coluna_id, nome, tipo, progresso_padrao, allow_back FROM projeto.kanban_colunas WHERE projeto_id = %s ORDER BY ordem", (project_id,))
         colunas = [dict(row) for row in cur.fetchall()]
         # Converte allow_back para booleano
         for col in colunas:
@@ -377,7 +380,7 @@ def carregar_kanban_config(project_id):
 def salvar_kanban_config(project_id, config_data):
     db = database.get_db()
     with db.cursor() as cur:
-        cur.execute("DELETE FROM kanban_colunas WHERE projeto_id = %s", (project_id,))
+        cur.execute("DELETE FROM projeto.kanban_colunas WHERE projeto_id = %s", (project_id,))
         for i, col in enumerate(config_data.get('colunas', [])):
             # Garante que o progresso seja um inteiro ou nulo
             progresso = col.get('progresso_padrao')
@@ -386,21 +389,24 @@ def salvar_kanban_config(project_id, config_data):
             if isinstance(allow_back, str):
                 allow_back = allow_back.lower() == 'true'
             cur.execute(
-                "INSERT INTO kanban_colunas (projeto_id, coluna_id, nome, tipo, ordem, progresso_padrao, allow_back) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                "INSERT INTO projeto.kanban_colunas (projeto_id, coluna_id, nome, tipo, ordem, progresso_padrao, allow_back) VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (project_id, col['coluna_id'], col['nome'], col['tipo'], i, progresso, allow_back)
             )
     db.commit()
 
+# =============================================================================
+# TIMES (schema rh)
+# =============================================================================
 def carregar_times():
     db = database.get_db()
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-        cur.execute("SELECT * FROM times ORDER BY nome")
+        cur.execute("SELECT * FROM rh.times ORDER BY nome")
         return [dict(row) for row in cur.fetchall()]
 
 def associar_time_projeto(project_id, time_id):
     db = database.get_db()
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-        cur.execute("UPDATE projetos SET time_id = %s WHERE id = %s", (time_id if time_id else None, project_id))
+        cur.execute("UPDATE projeto.projetos SET time_id = %s WHERE id = %s", (time_id if time_id else None, project_id))
     db.commit()
 
 def replanejar_tarefa(project_id, card_id):
@@ -413,7 +419,7 @@ def replanejar_tarefa(project_id, card_id):
     from datetime import datetime
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute(
-            "UPDATE tarefas SET conclusao = 0, kanban_coluna_id = 'backlog', inicio = NULL, fim = NULL WHERE projeto_id = %s AND id = %s",
+            "UPDATE projeto.tarefas SET conclusao = 0, kanban_coluna_id = 'backlog', inicio = NULL, fim = NULL WHERE projeto_id = %s AND id = %s",
             (project_id, card_id)
         )
     db.commit()
@@ -429,12 +435,12 @@ def mover_card_kanban(project_id, card_id, coluna_destino_id, manter_data=False)
     from datetime import datetime
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         # Carrega a coluna de destino para obter seu tipo e progresso padrão
-        cur.execute("SELECT tipo, progresso_padrao FROM kanban_colunas WHERE projeto_id = %s AND coluna_id = %s", (project_id, coluna_destino_id))
+        cur.execute("SELECT tipo, progresso_padrao FROM projeto.kanban_colunas WHERE projeto_id = %s AND coluna_id = %s", (project_id, coluna_destino_id))
         col_dest = cur.fetchone()
         
         if not col_dest:
             # Se a coluna não for encontrada, apenas atualiza a coluna da tarefa sem outras ações.
-            cur.execute("UPDATE tarefas SET kanban_coluna_id = %s WHERE projeto_id = %s AND id = %s", (coluna_destino_id, project_id, card_id))
+            cur.execute("UPDATE projeto.tarefas SET kanban_coluna_id = %s WHERE projeto_id = %s AND id = %s", (coluna_destino_id, project_id, card_id))
             db.commit()
             return
 
@@ -442,7 +448,7 @@ def mover_card_kanban(project_id, card_id, coluna_destino_id, manter_data=False)
         progresso_padrao = col_dest['progresso_padrao']
 
         # Carrega dados atuais da tarefa e da coluna de origem
-        cur.execute("SELECT kanban_coluna_id, inicio FROM tarefas WHERE projeto_id = %s AND id = %s", (project_id, card_id))
+        cur.execute("SELECT kanban_coluna_id, inicio FROM projeto.tarefas WHERE projeto_id = %s AND id = %s", (project_id, card_id))
         tarefa_atual = cur.fetchone()
         coluna_origem_id = tarefa_atual['kanban_coluna_id'] if tarefa_atual else None
         inicio_existente = tarefa_atual['inicio'] if tarefa_atual else None
@@ -450,7 +456,7 @@ def mover_card_kanban(project_id, card_id, coluna_destino_id, manter_data=False)
         # Obtém o tipo da coluna de origem
         tipo_origem = None
         if coluna_origem_id:
-            cur.execute("SELECT tipo FROM kanban_colunas WHERE projeto_id = %s AND coluna_id = %s", (project_id, coluna_origem_id))
+            cur.execute("SELECT tipo FROM projeto.kanban_colunas WHERE projeto_id = %s AND coluna_id = %s", (project_id, coluna_origem_id))
             col_orig = cur.fetchone()
             if col_orig:
                 tipo_origem = col_orig['tipo']
@@ -481,7 +487,7 @@ def mover_card_kanban(project_id, card_id, coluna_destino_id, manter_data=False)
         set_clauses = [f"{key} = %s" for key in update_fields.keys()]
         params = list(update_fields.values()) + [int(card_id), project_id]
         
-        cur.execute(f"UPDATE tarefas SET {', '.join(set_clauses)} WHERE id = %s AND projeto_id = %s", params)
+        cur.execute(f"UPDATE projeto.tarefas SET {', '.join(set_clauses)} WHERE id = %s AND projeto_id = %s", params)
 
         # RN016: Se a tarefa foi concluída, recalcular o projeto para adiantar sucessoras
         if tipo_dest == 'fim':
@@ -494,11 +500,11 @@ def mover_card_kanban(project_id, card_id, coluna_destino_id, manter_data=False)
 def adicionar_tarefa(project_id, dados):
     db = database.get_db()
     with db.cursor() as cur:
-        cur.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM tarefas WHERE projeto_id = %s", (project_id,))
+        cur.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM projeto.tarefas WHERE projeto_id = %s", (project_id,))
         next_id = cur.fetchone()[0]
         cur.execute(
             """
-            INSERT INTO tarefas (id, projeto_id, fase, modulo, tarefa, subtarefa, descricao, dias, predecessora_id, conclusao, responsavel_id, baseline_inicio, baseline_fim, inicio, fim, kanban_coluna_id, parent_id, tipo, criterios_aceite, sprint, planejado)
+            INSERT INTO projeto.tarefas (id, projeto_id, fase, modulo, tarefa, subtarefa, descricao, dias, predecessora_id, conclusao, responsavel_id, baseline_inicio, baseline_fim, inicio, fim, kanban_coluna_id, parent_id, tipo, criterios_aceite, sprint, planejado)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (next_id, project_id, dados.get('fase'), dados.get('modulo'), dados.get('tarefa'), dados.get('subtarefa'), dados.get('descricao'), dados.get('dias'), dados.get('predecessora_id'), dados.get('conclusao'), dados.get('responsavel_id'), dados.get('baseline_inicio'), dados.get('baseline_fim'), dados.get('inicio'), dados.get('fim'), dados.get('kanban_coluna_id'), dados.get('parent_id'), dados.get('tipo') or 'task', dados.get('criterios_aceite'), dados.get('sprint'), dados.get('planejado', False))
@@ -508,7 +514,7 @@ def adicionar_tarefa(project_id, dados):
 def adicionar_log_atividade(cur, tarefa_pk_id, responsavel_id, detalhe):
     """Adiciona um log de atividade para uma tarefa."""
     cur.execute(
-        "INSERT INTO tarefa_atividades (tarefa_pk_id, responsavel_id, tipo, detalhe) VALUES (%s, %s, 'log', %s)",
+        "INSERT INTO projeto.tarefa_atividades (tarefa_pk_id, responsavel_id, tipo, detalhe) VALUES (%s, %s, 'log', %s)",
         (tarefa_pk_id, responsavel_id, detalhe)
     )
 
@@ -522,7 +528,7 @@ def editar_tarefa(project_id, task_id, dados):
     db = database.get_db()
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         # Carrega a tarefa atual para comparar as mudanças
-        cur.execute("SELECT * FROM tarefas WHERE projeto_id = %s AND id = %s", (project_id, task_id))
+        cur.execute("SELECT * FROM projeto.tarefas WHERE projeto_id = %s AND id = %s", (project_id, task_id))
         tarefa_antiga = dict(cur.fetchone())
 
         # Constrói a query dinamicamente para atualizar apenas os campos fornecidos
@@ -540,7 +546,7 @@ def editar_tarefa(project_id, task_id, dados):
 
         set_clauses = [f"{key} = %s" for key in update_fields.keys()]
         params = list(update_fields.values()) + [project_id, task_id]
-        cur.execute(f"UPDATE tarefas SET {', '.join(set_clauses)} WHERE projeto_id = %s AND id = %s", params)
+        cur.execute(f"UPDATE projeto.tarefas SET {', '.join(set_clauses)} WHERE projeto_id = %s AND id = %s", params)
 
         # Adiciona logs de atividade para as mudanças
         # (Assume que o usuário logado é passado em 'dados' ou obtido de outro lugar)
@@ -559,7 +565,7 @@ def adicionar_comentario_tarefa(tarefa_pk_id, responsavel_id, comentario):
     db = database.get_db()
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO tarefa_atividades (tarefa_pk_id, responsavel_id, tipo, detalhe) VALUES (%s, %s, 'comentario', %s)",
+            "INSERT INTO projeto.tarefa_atividades (tarefa_pk_id, responsavel_id, tipo, detalhe) VALUES (%s, %s, 'comentario', %s)",
             (tarefa_pk_id, responsavel_id, comentario)
         )
     db.commit()
@@ -570,8 +576,8 @@ def carregar_atividades_tarefa(tarefa_pk_id):
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute("""
             SELECT a.*, r.nome as responsavel_nome
-            FROM tarefa_atividades a
-            LEFT JOIN responsaveis r ON a.responsavel_id = r.id
+            FROM projeto.tarefa_atividades a
+            LEFT JOIN rh.responsaveis r ON a.responsavel_id = r.id
             WHERE a.tarefa_pk_id = %s
             ORDER BY a.criado_em DESC
         """, (tarefa_pk_id,))
@@ -580,32 +586,24 @@ def carregar_atividades_tarefa(tarefa_pk_id):
 def adicionar_time(dados):
     db = database.get_db()
     with db.cursor() as cur:
-        cur.execute("INSERT INTO times (nome) VALUES (%s) RETURNING id", (dados['nome'],))
+        cur.execute("INSERT INTO rh.times (nome) VALUES (%s) RETURNING id", (dados['nome'],))
         time_id = cur.fetchone()[0]
         for membro_id in dados.get('membros', []):
-            cur.execute("INSERT INTO responsaveis_times (responsavel_id, time_id) VALUES (%s, %s)", (membro_id, time_id))
-    db.commit()
-
-def adicionar_time(dados):
-    db = database.get_db()
-    with db.cursor() as cur:
-        cur.execute("INSERT INTO times (nome) VALUES (%s) RETURNING id", (dados['nome'],))
-        time_id = cur.fetchone()[0]
-        for membro_id in dados.get('membros', []):
-            cur.execute("INSERT INTO responsaveis_times (responsavel_id, time_id) VALUES (%s, %s)", (membro_id, time_id))
+            cur.execute("INSERT INTO rh.responsaveis_times (responsavel_id, time_id) VALUES (%s, %s)", (membro_id, time_id))
     db.commit()
 
 def editar_time(id, dados):
     db = database.get_db()
     with db.cursor() as cur:
-        cur.execute("UPDATE times SET nome = %s WHERE id = %s", (dados['nome'], id))
-        cur.execute("DELETE FROM responsaveis_times WHERE time_id = %s", (id,))
+        cur.execute("UPDATE rh.times SET nome = %s WHERE id = %s", (dados['nome'], id))
+        cur.execute("DELETE FROM rh.responsaveis_times WHERE time_id = %s", (id,))
         for membro_id in dados.get('membros', []):
-            cur.execute("INSERT INTO responsaveis_times (responsavel_id, time_id) VALUES (%s, %s)", (membro_id, id))
+            cur.execute("INSERT INTO rh.responsaveis_times (responsavel_id, time_id) VALUES (%s, %s)", (membro_id, id))
     db.commit()
 
 def excluir_time(id):
     db = database.get_db()
     with db.cursor() as cur:
-        cur.execute("DELETE FROM times WHERE id = %s", (id,))
+        cur.execute("DELETE FROM rh.times WHERE id = %s", (id,))
     db.commit()
+

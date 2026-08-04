@@ -1,16 +1,24 @@
-# ✅ TODAS AS MELHORIAS IMPLEMENTADAS
+# TODO — Migração para Schemas por Domínio
 
-## Hierarquia: Épico > Feature > História > Tarefa > Subtarefa
-- ✅ `app/routes.py` - Filtros `features`/`subtasks` em `detalhes_projeto`
-- ✅ `templates/detalhes_projeto.html` - CSS badges, stats 6 colunas, seções, modal hierárquico
-- ✅ `templates/backlog.html` - Badges e filtros expandidos
+Objetivo: separar o banco em schemas por domínio, sem utilizar o schema `public`.
 
-## Fluxo de Transição entre Colunas Kanban
-- ✅ `app/migrations.py` - Coluna `allow_back` adicionada
-- ✅ `app/project_manager.py` - `carregar_kanban_config()`/`salvar_kanban_config()` com `allow_back`
-- ✅ `app/project_manager.py` - `replanejar_tarefa()` + `mover_card_kanban()` com validação de fluxo
-- ✅ `app/routes.py` - Rota `/kanban_replanejar`
-- ✅ `static/kanban.js` - Validação `allow_back` no drag-and-drop, checkbox na config
-- ✅ `templates/kanban.html` - Botão config colunas, dialog replanejar
+## Schema Mapping
 
+| Schema | Tabelas |
+|--------|---------|
+| `rh` | `responsaveis`, `ferias`, `times`, `responsaveis_times` |
+| `projeto` | `projetos`, `tarefas`, `kanban_colunas`, `tarefa_atividades`, `projeto_configuracoes` |
+| `config` | `configuracoes`, `feriados_customizados` |
+
+## Steps
+
+- [x] 1. `app/config.py` — Adicionar constantes de schemas (`SCHEMA_RH`, `SCHEMA_PROJETO`, `SCHEMA_CONFIG`).
+- [x] 2. `app/database.py` — Configurar `search_path` após conectar.
+- [x] 3. `schema.sql` — Criar schemas e qualificar todas as tabelas.
+- [ ] 4. `app/migrations.py` — Filtrar por `table_schema` e qualificar `ALTER TABLE`.
+- [ ] 5. `app/project_manager.py` — Qualificar todas as queries SQL.
+- [ ] 6. `app/routes.py` — Qualificar query em `planejar_tarefa`.
+- [ ] 7. `tests/test_project_manager.py` — Atualizar mocks para schemas qualificados.
+- [ ] 8. `README.md` — Documentar a nova estrutura.
+- [ ] 9. Teste final (executar testes unitários).
 

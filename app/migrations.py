@@ -4,18 +4,32 @@ Módulo de migrações do banco de dados.
 Gerencia alterações evolutivas no schema sem perder dados existentes.
 """
 
-from . import database
+from . import config, database
+
+
+def _schema_de_tabela(tabela):
+    """
+    Retorna o schema (domínio) da tabela com base no mapeamento por domínio.
+    """
+    if tabela in ('responsaveis', 'ferias', 'times', 'responsaveis_times'):
+        return config.SCHEMA_RH
+    if tabela in ('projetos', 'tarefas', 'kanban_colunas', 'tarefa_atividades', 'projeto_configuracoes'):
+        return config.SCHEMA_PROJETO
+    if tabela in ('configuracoes', 'feriados_customizados'):
+        return config.SCHEMA_CONFIG
+    return 'public'
 
 
 def _coluna_existe(cur, tabela, coluna):
-    """Verifica se uma coluna existe em uma tabela."""
+    """Verifica se uma coluna existe em uma tabela, no schema do domínio correspondente."""
+    schema = _schema_de_tabela(tabela)
     cur.execute(
         """
         SELECT column_name 
         FROM information_schema.columns 
-        WHERE table_name = %s AND column_name = %s
+        WHERE table_schema = %s AND table_name = %s AND column_name = %s
         """,
-        (tabela, coluna)
+        (schema, tabela, coluna)
     )
     return cur.fetchone() is not None
 
@@ -23,10 +37,20 @@ def _coluna_existe(cur, tabela, coluna):
 def _adicionar_coluna(cur, tabela, coluna, tipo):
     """Adiciona uma coluna se ela não existir."""
     if not _coluna_existe(cur, tabela, coluna):
-        cur.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo};")
-        print(f"[MIGRAÇÃO] Coluna '{coluna}' adicionada à tabela '{tabela}'.")
+        schema = _schema_de_tabela(tabela)
+        tabela_qualificada = f"{schema}.{tabela}"
+        cur.execute(f"ALTER TABLE {tabela_qualificada} ADD COLUMN {coluna} {tipo};")
+        print(f"[MIGRAÇÃO] Coluna '{coluna}' adicionada à tabela '{tabela_qualificada}'.")
         return True
     return False
+
+
+def _garantir_schemas(cur):
+    """
+    Garante que os schemas por domínio existam antes de qualquer migração.
+    """
+    for schema in {config.SCHEMA_RH, config.SCHEMA_PROJETO, config.SCHEMA_CONFIG}:
+        cur.execute(f"CREATE SCHEMA IF NOT EXISTS {schema};")
 
 
 def executar_migracoes():
@@ -36,6 +60,7 @@ def executar_migracoes():
     """
     db = database.get_db()
     with db.cursor() as cur:
+        _garantir_schemas(cur)
         migracoes_aplicadas = 0
 
         # ---------------------------------------------------------------

@@ -148,6 +148,12 @@
 
 ### Banco de Dados
 - **PostgreSQL** (schema versionado em `schema.sql` com migrações idempotentes em `app/migrations.py`)
+- **Schemas por domínio** (sem utilizar o schema `public`):
+  - `rh` → Recursos Humanos: `responsaveis`, `ferias`, `times`, `responsaveis_times`
+  - `projeto` → Projetos: `projetos`, `tarefas`, `kanban_colunas`, `tarefa_atividades`, `projeto_configuracoes`
+  - `config` → Configurações: `configuracoes`, `feriados_customizados`
+- O `search_path` da conexão é configurado em `app/config.py` (`SEARCH_PATH`) e aplicado em `app/database.py`.
+- A extensão `uuid-ossp` permanece no schema `public`, que é incluído no `search_path` para manter a função `uuid_generate_v4()` acessível.
 
 ---
 

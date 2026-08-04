@@ -53,7 +53,7 @@ class TestProjectManager(unittest.TestCase):
         
         # Verify the correct SQL was executed
         self.mock_cur.execute.assert_called_with(
-            "SELECT coluna_id, nome, tipo, progresso_padrao FROM kanban_colunas WHERE projeto_id = %s ORDER BY ordem",
+            "SELECT coluna_id, nome, tipo, progresso_padrao, allow_back FROM projeto.kanban_colunas WHERE projeto_id = %s ORDER BY ordem",
             (project_id,)
         )
 
@@ -106,18 +106,18 @@ class TestProjectManager(unittest.TestCase):
 
         # Check the DELETE call
         self.mock_cur.execute.assert_any_call(
-            "DELETE FROM kanban_colunas WHERE projeto_id = %s",
+            "DELETE FROM projeto.kanban_colunas WHERE projeto_id = %s",
             (project_id,)
         )
 
         # Check the INSERT calls
         self.mock_cur.execute.assert_any_call(
-            "INSERT INTO kanban_colunas (projeto_id, coluna_id, nome, tipo, ordem, progresso_padrao) VALUES (%s, %s, %s, %s, %s, %s)",
-            (project_id, 'todo', 'To Do', 'inicio', 0, 0)
+            "INSERT INTO projeto.kanban_colunas (projeto_id, coluna_id, nome, tipo, ordem, progresso_padrao, allow_back) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (project_id, 'todo', 'To Do', 'inicio', 0, 0, True)
         )
         self.mock_cur.execute.assert_any_call(
-            "INSERT INTO kanban_colunas (projeto_id, coluna_id, nome, tipo, ordem, progresso_padrao) VALUES (%s, %s, %s, %s, %s, %s)",
-            (project_id, 'doing', 'In Progress', 'meio', 1, 50)
+            "INSERT INTO projeto.kanban_colunas (projeto_id, coluna_id, nome, tipo, ordem, progresso_padrao, allow_back) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (project_id, 'doing', 'In Progress', 'meio', 1, 50, True)
         )
         self.mock_conn.commit.assert_called_once()
 

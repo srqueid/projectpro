@@ -403,7 +403,7 @@ def planejar_tarefa(project_id):
     db = database.get_db()
     with db.cursor() as cur:
         cur.execute(
-            "UPDATE tarefas SET planejado = %s, sprint = %s WHERE projeto_id = %s AND id = %s",
+            "UPDATE projeto.tarefas SET planejado = %s, sprint = %s WHERE projeto_id = %s AND id = %s",
             (planejado, sprint if sprint else None, project_id, task_id)
         )
     db.commit()
