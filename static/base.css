@@ -8,3 +8,317 @@
 /* Centraliza ícones quando encolhido */
 .collapsed nav a { justify-content: center; padding-left: 0; padding-right: 0; }
 
+/* === COMPONENTES GLOBAIS === */
+/* Botões e campos reutilizados em todo o sistema */
+
+.btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1.25rem;
+    background-color: #2563eb;
+    color: #ffffff;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+.btn-primary:hover {
+    background-color: #1d4ed8;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+}
+.btn-primary:focus-visible {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+}
+
+.btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1.25rem;
+    background-color: #ffffff;
+    color: #334155;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+.btn-secondary:hover {
+    background-color: #f8fafc;
+    border-color: #94a3b8;
+}
+.btn-secondary:focus-visible {
+    outline: 2px solid #94a3b8;
+    outline-offset: 2px;
+}
+
+.input-field {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    background-color: #ffffff;
+    color: #0f172a;
+    font-size: 0.875rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.5rem;
+    transition: all 0.15s;
+}
+.input-field:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+.input-field::placeholder {
+    color: #94a3b8;
+}
+
+/* === SISTEMA GLOBAL DE MODAIS === */
+/* Componentes reutilizáveis para todos os <dialog> do sistema */
+
+/* Dialog nativo - reset e estrutura base */
+dialog.modal-config {
+    margin: auto;
+    padding: 0;
+    border: none;
+    border-radius: 16px;
+    background: #ffffff;
+    color: #0f172a;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.25);
+    max-width: 520px;
+    width: min(92vw, 520px);
+    max-height: 90vh;
+    overflow-y: auto;
+    animation: modal-in 0.2s ease-out;
+}
+
+/* Backdrop do dialog */
+dialog.modal-config::backdrop {
+    background: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    animation: modal-backdrop-in 0.2s ease-out;
+}
+
+/* Animações de entrada */
+@keyframes modal-in {
+    from { opacity: 0; transform: translateY(12px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes modal-backdrop-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Cabeçalho do modal */
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+    border-radius: 16px 16px 0 0;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+.modal-header h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0;
+}
+
+/* Botão de fechar (×) */
+.modal-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: #64748b;
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.15s;
+    flex-shrink: 0;
+}
+.modal-close:hover {
+    background: #e2e8f0;
+    color: #0f172a;
+}
+.modal-close:focus-visible {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+}
+
+/* Corpo do modal */
+.modal-body {
+    padding: 1.5rem;
+}
+
+/* Rodapé do modal */
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #e2e8f0;
+    background: #f8fafc;
+    border-radius: 0 0 16px 16px;
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+}
+
+/* Responsivo: modais em mobile */
+@media (max-width: 768px) {
+    dialog.modal-config {
+        width: 100vw;
+        max-width: 100vw;
+        max-height: 100dvh;
+        height: 100dvh;
+        margin: 0;
+        border-radius: 0;
+    }
+    .modal-header {
+        border-radius: 0;
+        padding: 1rem 1.25rem;
+    }
+    .modal-body {
+        padding: 1.25rem;
+    }
+    .modal-footer {
+        border-radius: 0;
+        padding: 0.875rem 1.25rem;
+    }
+    .modal-footer .btn-primary,
+    .modal-footer .btn-secondary {
+        flex: 1;
+        justify-content: center;
+        text-align: center;
+    }
+}
+
+/* === RESPONSIVO MOBILE === */
+/* Overlay do menu mobile */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 49;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+.sidebar-overlay.active {
+    opacity: 1;
+}
+
+/* Barra superior do mobile (hambúrguer) - oculta em desktop */
+.mobile-topbar {
+    display: none;
+    align-items: center;
+    height: 56px;
+    padding: 0 12px;
+    background: #0f172a;
+    color: white;
+    flex-shrink: 0;
+    z-index: 30;
+}
+.mobile-hamburger {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: none;
+    border: none;
+    color: white;
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+    padding: 6px;
+}
+.mobile-topbar-title {
+    font-weight: 700;
+}
+
+@media (max-width: 768px) {
+    /* Sidebar vira drawer fora da tela */
+    #main-sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 264px !important;
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+        z-index: 60;
+    }
+    #main-sidebar.open {
+        transform: translateX(0);
+    }
+    #main-sidebar.collapsed {
+        width: 264px !important;
+    }
+    #main-sidebar .fade-text {
+        display: inline !important;
+        opacity: 1 !important;
+    }
+    #main-sidebar .section-title {
+        display: block !important;
+    }
+    #main-sidebar nav a {
+        justify-content: flex-start !important;
+        padding-left: 0.75rem !important;
+        padding-right: 0.75rem !important;
+    }
+    #main-sidebar .logo-text {
+        display: inline !important;
+    }
+
+    /* Overlay visível quando aberto */
+    .sidebar-overlay.active {
+        display: block;
+    }
+
+    /* Barra superior mobile visível */
+    .mobile-topbar {
+        display: flex;
+    }
+
+    /* Ocultar o botão de colapsar dentro do drawer no mobile */
+    #main-sidebar .toggle-collapse-btn {
+        display: none;
+    }
+
+    /* Reduzir paddings do conteúdo */
+    main .p-6, main .p-8 {
+        padding: 1rem !important;
+    }
+    main .px-6, main .px-8 {
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+    }
+
+    /* Headers empilháveis */
+    main header {
+        flex-wrap: wrap;
+        height: auto !important;
+        min-height: 3.5rem;
+        padding-top: 0.5rem;
+        padding-bottom: 0.5rem;
+        gap: 0.5rem;
+    }
+}
+

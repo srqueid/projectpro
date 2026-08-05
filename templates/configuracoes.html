@@ -1,28 +1,38 @@
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-    <meta charset="UTF-8">
+<meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Configurações - ProjectPro</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}">
     <style>
         .tab-content { display: none; }
         .tab-content.active { display: block; }
         .tab-btn.active { background-color: #1e40af; color: white; }
+        /* Responsivo: abas com scroll horizontal */
+        .tab-nav { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; }
+        .tab-nav::-webkit-scrollbar { height: 4px; }
+        .tab-nav::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .tab-nav button { white-space: nowrap; flex-shrink: 0; }
+        /* Tabelas com scroll horizontal em mobile */
+        .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .table-wrapper table { min-width: 480px; }
     </style>
 </head>
-<body class="bg-gray-50 text-slate-800 h-screen flex flex-col items-center pt-10">
+<body class="bg-gray-50 text-slate-800 h-screen flex flex-col items-center pt-4 sm:pt-10 px-2 sm:px-4">
 
     <div class="w-full max-w-6xl bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
 
-        <div class="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+        <div class="bg-slate-900 text-white px-4 sm:px-6 py-4 flex justify-between items-center gap-3">
             <h1 class="text-xl font-bold">Configurações Gerais</h1>
-            <a href="{{ url_for('main.home') }}" class="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded transition-colors">Voltar para Home</a>
+            <a href="{{ url_for('main.home') }}" class="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded transition-colors whitespace-nowrap">Voltar</a>
         </div>
 
         <!-- Abas de Navegação -->
         <div class="border-b border-gray-200 bg-gray-50">
-            <nav class="flex gap-4 px-8 -mb-px">
+            <nav class="tab-nav flex gap-4 px-4 sm:px-8 -mb-px">
                 <button onclick="switchTab('responsaveis')" class="tab-btn py-4 px-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-gray-300">Responsáveis</button>
                 <button onclick="switchTab('times')" class="tab-btn py-4 px-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-gray-300">Times</button>
                 <button onclick="switchTab('feriados')" class="tab-btn py-4 px-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-gray-300">Feriados & Bloqueios</button>
@@ -72,7 +82,7 @@
                     </div>
                     <div class="md:col-span-2 bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col h-[600px]">
                         <div class="bg-gray-100 px-6 py-3 border-b"><span class="font-bold text-slate-700">Cadastrados ({{ responsaveis|length }})</span></div>
-                        <div class="overflow-y-auto flex-1">
+                        <div class="overflow-y-auto flex-1 table-wrapper">
                             {% if responsaveis %}
                             <table class="w-full text-sm">
                                 <thead class="bg-gray-50">
@@ -139,9 +149,9 @@
                             </div>
                         </form>
                     </div>
-                    <div class="md:col-span-2 bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col h-[600px]">
+<div class="md:col-span-2 bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col h-[600px]">
                         <div class="bg-gray-100 px-6 py-3 border-b"><span class="font-bold text-slate-700">Times Cadastrados ({{ times|length }})</span></div>
-                        <div class="overflow-y-auto flex-1">
+                        <div class="overflow-y-auto flex-1 table-wrapper">
                             {% if times %}
                             <table class="w-full text-sm">
                                 <thead class="bg-gray-50">
@@ -205,9 +215,9 @@
                             </form>
                         </div>
                     </div>
-                    <div class="bg-white border rounded-xl overflow-hidden flex flex-col h-[500px]">
+<div class="bg-white border rounded-xl overflow-hidden flex flex-col h-[500px]">
                         <div class="bg-gray-100 px-6 py-3 border-b"><span class="font-bold text-slate-700">Datas Bloqueadas ({{ feriados|length }})</span></div>
-                        <div class="overflow-y-auto flex-1">
+                        <div class="overflow-y-auto flex-1 table-wrapper">
                             {% if feriados %}
                             <table class="w-full text-sm">
                                 <tbody class="divide-y divide-gray-100">

@@ -37,14 +37,14 @@
         <h1 class="text-lg font-bold text-slate-800">📋 Backlog</h1>
         <p class="text-xs text-slate-500 capitalize">{{ project_id }}</p>
     </div>
-    <div class="flex items-center gap-3">
-        <a href="{{ url_for('main.detalhes_projeto', project_id=project_id) }}" class="flex items-center gap-2 text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200">
+<div class="flex flex-wrap items-center gap-3">
+        <a href="{{ url_for('main.detalhes_projeto', project_id=project_id) }}" class="flex items-center gap-2 text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200 whitespace-nowrap">
             Detalhes do Projeto
         </a>
-        <a href="{{ url_for('main.planilha', project_id=project_id) }}" class="flex items-center gap-2 text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200">
+        <a href="{{ url_for('main.planilha', project_id=project_id) }}" class="flex items-center gap-2 text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200 whitespace-nowrap">
             Planilha
         </a>
-        <a href="{{ url_for('main.kanban', project_id=project_id) }}" class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm transition-all">
+        <a href="{{ url_for('main.kanban', project_id=project_id) }}" class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm transition-all whitespace-nowrap">
             Ver Kanban
         </a>
     </div>
@@ -61,8 +61,8 @@
             {% if planned_items %}
             <div class="space-y-2">
                 {% for t in planned_items %}
-                <div class="backlog-item flex items-center justify-between p-3 bg-blue-50/30 rounded-lg border border-blue-100">
-                    <div class="flex items-center gap-3 flex-1">
+<div class="backlog-item flex flex-wrap items-center justify-between gap-3 p-3 bg-blue-50/30 rounded-lg border border-blue-100">
+                    <div class="flex flex-wrap items-center gap-3 flex-1 min-w-0">
                         <span class="tipo-badge tipo-{{ t.tipo or 'task' }}">
                             {% if t.tipo == 'epic' %}Épico
                             {% elif t.tipo == 'feature' %}Feature
@@ -70,15 +70,15 @@
                             {% elif t.tipo == 'subtask' %}Subtarefa
                             {% else %}Tarefa{% endif %}
                         </span>
-                        <span class="font-medium text-slate-800">{{ t.tarefa or t.subtarefa or 'Sem nome' }}</span>
+                        <span class="font-medium text-slate-800 break-words">{{ t.tarefa or t.subtarefa or 'Sem nome' }}</span>
                         {% if t.sprint %}
                         <span class="planejado-badge">{{ t.sprint }}</span>
                         {% endif %}
                     </div>
-                    <div class="flex items-center gap-3 text-xs text-slate-500">
+                    <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
                         <span>📊 {{ t.conclusao or 0 }}%</span>
                         <span class="font-mono">#{{ t.id }}</span>
-                        <button onclick="desplanejar({{ t.id }})" class="text-amber-600 hover:text-amber-800 font-medium px-2 py-1 hover:bg-amber-50 rounded transition-all" title="Remover do planejamento">
+                        <button onclick="desplanejar({{ t.id }})" class="text-amber-600 hover:text-amber-800 font-medium px-2 py-1 hover:bg-amber-50 rounded transition-all whitespace-nowrap" title="Remover do planejamento">
                             Mover para Backlog
                         </button>
                     </div>
@@ -108,8 +108,8 @@
             {% if backlog_items %}
             <div class="space-y-2" id="lista-backlog">
                 {% for t in backlog_items %}
-                <div class="backlog-item flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-blue-300 backlog-tipo" data-tipo="{{ t.tipo or 'task' }}">
-                    <div class="flex items-center gap-3 flex-1">
+                <div class="backlog-item flex flex-wrap items-center justify-between gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-blue-300 backlog-tipo" data-tipo="{{ t.tipo or 'task' }}">
+                    <div class="flex flex-wrap items-center gap-3 flex-1 min-w-0">
                         <span class="tipo-badge tipo-{{ t.tipo or 'task' }}">
                             {% if t.tipo == 'epic' %}Épico
                             {% elif t.tipo == 'feature' %}Feature
@@ -117,7 +117,7 @@
                             {% elif t.tipo == 'subtask' %}Subtarefa
                             {% else %}Tarefa{% endif %}
                         </span>
-                        <span class="font-medium text-slate-800">{{ t.tarefa or t.subtarefa or 'Sem nome' }}</span>
+                        <span class="font-medium text-slate-800 break-words">{{ t.tarefa or t.subtarefa or 'Sem nome' }}</span>
                         {% if t.responsavel_id %}
                         {% set resp = responsaveis | selectattr('id', 'equalto', t.responsavel_id) | first %}
                         {% if resp %}
@@ -125,10 +125,10 @@
                         {% endif %}
                         {% endif %}
                     </div>
-                    <div class="flex items-center gap-3 text-xs text-slate-500">
+                    <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
                         <span>📊 {{ t.conclusao or 0 }}%</span>
                         <span class="font-mono">#{{ t.id }}</span>
-                        <button onclick="planejar({{ t.id }})" class="text-blue-600 hover:text-blue-800 font-medium px-2 py-1 hover:bg-blue-50 rounded transition-all" title="Planejar para um sprint">
+                        <button onclick="planejar({{ t.id }})" class="text-blue-600 hover:text-blue-800 font-medium px-2 py-1 hover:bg-blue-50 rounded transition-all whitespace-nowrap" title="Planejar para um sprint">
                             Planejar ➔
                         </button>
                     </div>
@@ -143,24 +143,25 @@
 </div>
 
 <!-- Modal de Planejamento -->
-<dialog id="modal-planejar" class="modal-config">
-    <div class="modal-body">
-        <h3 class="font-bold text-lg mb-4">📅 Planejar Item</h3>
-        <form id="form-planejar">
-            <input type="hidden" id="task-id-planejar">
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm font-medium text-slate-700">Sprint</label>
-                    <input type="text" id="sprint-planejar" class="mt-1 w-full input-field" placeholder="Ex: Sprint 1" required>
-                    <p class="text-xs text-slate-500 mt-1">Defina o sprint para este item. Itens planejados aparecerão no Kanban.</p>
-                </div>
-            </div>
-            <div class="flex justify-end gap-3 mt-6">
-                <button type="button" onclick="document.getElementById('modal-planejar').close()" class="btn-secondary">Cancelar</button>
-                <button type="submit" class="btn-primary">Planejar</button>
-            </div>
-        </form>
+<dialog id="modal-planejar" class="modal-config" aria-label="Planejar Item">
+    <div class="modal-header">
+        <h3 id="modal-planejar-titulo">📅 Planejar Item</h3>
+        <button type="button" onclick="fecharModal('modal-planejar')" class="modal-close" aria-label="Fechar">&times;</button>
     </div>
+    <form id="form-planejar">
+        <input type="hidden" id="task-id-planejar">
+        <div class="modal-body space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-700">Sprint</label>
+                <input type="text" id="sprint-planejar" class="mt-1 w-full input-field" placeholder="Ex: Sprint 1" required>
+                <p class="text-xs text-slate-500 mt-1">Defina o sprint para este item. Itens planejados aparecerão no Kanban.</p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" onclick="fecharModal('modal-planejar')" class="btn-secondary">Cancelar</button>
+            <button type="submit" class="btn-primary">Planejar</button>
+        </div>
+    </form>
 </dialog>
 
 <script>

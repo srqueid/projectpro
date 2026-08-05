@@ -2,6 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ProjectPro</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}">
@@ -9,6 +10,9 @@
     {% block head %}{% endblock %}
 </head>
 <body class="flex h-screen overflow-hidden bg-gray-50 text-slate-800">
+
+    <!-- Overlay do menu mobile (slide-in) -->
+    <div id="sidebar-overlay" class="sidebar-overlay" onclick="closeMobileSidebar()"></div>
 
     <aside id="main-sidebar" class="w-64 bg-slate-900 text-white flex flex-col shadow-xl shrink-0 z-50 sidebar-transition relative group">
         
@@ -64,7 +68,14 @@
         </nav>
     </aside>
 
-    <main class="flex-1 flex flex-col h-screen overflow-hidden relative bg-gray-50 transition-all">
+<main class="flex-1 flex flex-col h-screen overflow-hidden relative bg-gray-50 transition-all">
+        <!-- Barra superior do mobile (hambúrguer) -->
+        <div class="mobile-topbar">
+            <button onclick="openMobileSidebar()" class="mobile-hamburger" aria-label="Abrir menu">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+                <span class="mobile-topbar-title">ProjectPro</span>
+            </button>
+        </div>
         {% block content %}{% endblock %}
     </main>
 

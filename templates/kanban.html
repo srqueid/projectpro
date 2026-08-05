@@ -11,15 +11,19 @@
             <h1 class="text-lg font-bold text-slate-800">Kanban</h1>
             <p class="text-xs text-slate-500">{{ project_id }}</p>
         </div>
-        <div class="flex items-center gap-3">
-            <button onclick="abrirModalNovaTarefa('backlog')" class="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow">
+<div class="flex flex-wrap items-center gap-3">
+            <button onclick="abrirModalConfigColunas()" class="flex items-center gap-2 text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200 whitespace-nowrap" title="Configurar Colunas">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 1.73v.44a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                Configurar Colunas
+            </button>
+            <button onclick="abrirModalNovaTarefa('backlog')" class="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow whitespace-nowrap">
                 <span>+</span> Nova Tarefa
             </button>
         </div>
     </header>
 
     <div class="flex-1 overflow-hidden p-6 flex flex-col">
-        <div class="grid grid-cols-4 gap-4 mb-4 shrink-0 no-print-cards">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 shrink-0 no-print-cards">
             <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
                 <div class="w-12 h-12 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-lg">#</div>
                 <div><p class="text-2xl font-bold text-slate-800">{{ stats.total }}</p><p class="text-xs text-slate-500 font-medium">Tarefas</p></div>
@@ -80,106 +84,108 @@
     </div>
 
     <!-- === MODAL NOVA TAREFA === -->
-    <dialog id="modal-nova-tarefa" class="modal-config">
-        <div class="modal-body">
-            <h3 class="font-bold text-lg mb-4">Nova Tarefa</h3>
-            <form id="form-nova-tarefa">
-                <input type="hidden" id="coluna-id-nova-tarefa">
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="col-span-2">
-                        <label for="nome-nova-tarefa" class="block text-sm font-medium text-slate-700">Tarefa *</label>
-                        <input type="text" id="nome-nova-tarefa" required class="mt-1 w-full input-field" placeholder="Nome da tarefa">
-                    </div>
-                    <div>
-                        <label for="fase-nova-tarefa" class="block text-sm font-medium text-slate-700">Fase</label>
-                        <input type="text" id="fase-nova-tarefa" class="mt-1 w-full input-field" placeholder="Ex: Planejamento">
-                    </div>
-                    <div>
-                        <label for="subtarefa-nova-tarefa" class="block text-sm font-medium text-slate-700">Subtarefa</label>
-                        <input type="text" id="subtarefa-nova-tarefa" class="mt-1 w-full input-field" placeholder="Detalhamento">
-                    </div>
-                    <div>
-                        <label for="responsavel-nova-tarefa" class="block text-sm font-medium text-slate-700">Responsável</label>
-                        <select id="responsavel-nova-tarefa" class="mt-1 w-full input-field">
-                            <option value="">Nenhum</option>
-                            {% for r in responsaveis %}
-                            <option value="{{ r.id }}">{{ r.nome }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div>
-                        <label for="dias-nova-tarefa" class="block text-sm font-medium text-slate-700">Dias</label>
-                        <input type="number" id="dias-nova-tarefa" value="1" min="1" class="mt-1 w-full input-field">
-                    </div>
-                    <div>
-                        <label for="inicio-nova-tarefa" class="block text-sm font-medium text-slate-700">Início</label>
-                        <input type="date" id="inicio-nova-tarefa" class="mt-1 w-full input-field">
-                    </div>
-                    <div>
-                        <label for="fim-nova-tarefa" class="block text-sm font-medium text-slate-700">Fim</label>
-                        <input type="date" id="fim-nova-tarefa" class="mt-1 w-full input-field">
-                    </div>
-                    <div>
-                        <label for="conclusao-nova-tarefa" class="block text-sm font-medium text-slate-700">Conclusão (%)</label>
-                        <input type="number" id="conclusao-nova-tarefa" value="0" min="0" max="100" class="mt-1 w-full input-field">
-                    </div>
-                    <div class="col-span-2">
-                        <label for="descricao-nova-tarefa" class="block text-sm font-medium text-slate-700">Descrição</label>
-                        <textarea id="descricao-nova-tarefa" rows="2" class="mt-1 w-full input-field" placeholder="Descrição opcional..."></textarea>
-                    </div>
-                </div>
-                <div class="flex justify-end gap-3 mt-6">
-                    <button type="button" onclick="document.getElementById('modal-nova-tarefa').close()" class="btn-secondary">Cancelar</button>
-                    <button type="submit" class="btn-primary">Criar Tarefa</button>
-                </div>
-            </form>
+    <dialog id="modal-nova-tarefa" class="modal-config" aria-label="Nova Tarefa">
+        <div class="modal-header">
+            <h3 id="modal-nova-tarefa-titulo">Nova Tarefa</h3>
+            <button type="button" onclick="fecharModal('modal-nova-tarefa')" class="modal-close" aria-label="Fechar">&times;</button>
         </div>
+        <form id="form-nova-tarefa">
+            <input type="hidden" id="coluna-id-nova-tarefa">
+            <div class="modal-body grid grid-cols-2 gap-4">
+                <div class="col-span-2">
+                    <label for="nome-nova-tarefa" class="block text-sm font-medium text-slate-700">Tarefa *</label>
+                    <input type="text" id="nome-nova-tarefa" required class="mt-1 w-full input-field" placeholder="Nome da tarefa">
+                </div>
+                <div>
+                    <label for="fase-nova-tarefa" class="block text-sm font-medium text-slate-700">Fase</label>
+                    <input type="text" id="fase-nova-tarefa" class="mt-1 w-full input-field" placeholder="Ex: Planejamento">
+                </div>
+                <div>
+                    <label for="subtarefa-nova-tarefa" class="block text-sm font-medium text-slate-700">Subtarefa</label>
+                    <input type="text" id="subtarefa-nova-tarefa" class="mt-1 w-full input-field" placeholder="Detalhamento">
+                </div>
+                <div>
+                    <label for="responsavel-nova-tarefa" class="block text-sm font-medium text-slate-700">Responsável</label>
+                    <select id="responsavel-nova-tarefa" class="mt-1 w-full input-field">
+                        <option value="">Nenhum</option>
+                        {% for r in responsaveis %}
+                        <option value="{{ r.id }}">{{ r.nome }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="dias-nova-tarefa" class="block text-sm font-medium text-slate-700">Dias</label>
+                    <input type="number" id="dias-nova-tarefa" value="1" min="1" class="mt-1 w-full input-field">
+                </div>
+                <div>
+                    <label for="inicio-nova-tarefa" class="block text-sm font-medium text-slate-700">Início</label>
+                    <input type="date" id="inicio-nova-tarefa" class="mt-1 w-full input-field">
+                </div>
+                <div>
+                    <label for="fim-nova-tarefa" class="block text-sm font-medium text-slate-700">Fim</label>
+                    <input type="date" id="fim-nova-tarefa" class="mt-1 w-full input-field">
+                </div>
+                <div>
+                    <label for="conclusao-nova-tarefa" class="block text-sm font-medium text-slate-700">Conclusão (%)</label>
+                    <input type="number" id="conclusao-nova-tarefa" value="0" min="0" max="100" class="mt-1 w-full input-field">
+                </div>
+                <div class="col-span-2">
+                    <label for="descricao-nova-tarefa" class="block text-sm font-medium text-slate-700">Descrição</label>
+                    <textarea id="descricao-nova-tarefa" rows="2" class="mt-1 w-full input-field" placeholder="Descrição opcional..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" onclick="fecharModal('modal-nova-tarefa')" class="btn-secondary">Cancelar</button>
+                <button type="submit" class="btn-primary">Criar Tarefa</button>
+            </div>
+        </form>
     </dialog>
 
     <!-- === MODAL EDITAR TAREFA === -->
-    <dialog id="modal-editar-tarefa" class="modal-config">
-        <div class="modal-body">
-            <h3 class="font-bold text-lg mb-4">Editar Tarefa</h3>
-            <form id="form-editar-tarefa">
-                <input type="hidden" id="id-tarefa-edicao">
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="col-span-2">
-                        <label for="nome-tarefa-edicao" class="block text-sm font-medium text-slate-700">Tarefa</label>
-                        <input type="text" id="nome-tarefa-edicao" class="mt-1 w-full input-field" placeholder="Nome da tarefa">
-                    </div>
-                    <div>
-                        <label for="responsavel-tarefa-edicao" class="block text-sm font-medium text-slate-700">Responsável</label>
-                        <select id="responsavel-tarefa-edicao" class="mt-1 w-full input-field">
-                            <option value="">Nenhum</option>
-                            {% for r in responsaveis %}
-                            <option value="{{ r.id }}">{{ r.nome }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div>
-                        <label for="inicio-tarefa-edicao" class="block text-sm font-medium text-slate-700">Início</label>
-                        <input type="date" id="inicio-tarefa-edicao" class="mt-1 w-full input-field">
-                    </div>
-                    <div>
-                        <label for="fim-tarefa-edicao" class="block text-sm font-medium text-slate-700">Fim</label>
-                        <input type="date" id="fim-tarefa-edicao" class="mt-1 w-full input-field">
-                    </div>
-                    <div>
-                        <label for="dias-tarefa-edicao" class="block text-sm font-medium text-slate-700">Dias</label>
-                        <input type="number" id="dias-tarefa-edicao" min="1" class="mt-1 w-full input-field">
-                    </div>
-                    <div>
-                        <label for="conclusao-tarefa-edicao" class="block text-sm font-medium text-slate-700">Conclusão (%)</label>
-                        <input type="number" id="conclusao-tarefa-edicao" min="0" max="100" class="mt-1 w-full input-field">
-                    </div>
-                    <div class="col-span-2">
-                        <label for="descricao-tarefa-edicao" class="block text-sm font-medium text-slate-700">Descrição</label>
-                        <textarea id="descricao-tarefa-edicao" rows="2" class="mt-1 w-full input-field" placeholder="Descrição opcional..."></textarea>
-                    </div>
+    <dialog id="modal-editar-tarefa" class="modal-config" aria-label="Editar Tarefa">
+        <div class="modal-header">
+            <h3 id="modal-editar-tarefa-titulo">Editar Tarefa</h3>
+            <button type="button" onclick="fecharModal('modal-editar-tarefa')" class="modal-close" aria-label="Fechar">&times;</button>
+        </div>
+        <form id="form-editar-tarefa">
+            <input type="hidden" id="id-tarefa-edicao">
+            <div class="modal-body grid grid-cols-2 gap-4">
+                <div class="col-span-2">
+                    <label for="nome-tarefa-edicao" class="block text-sm font-medium text-slate-700">Tarefa</label>
+                    <input type="text" id="nome-tarefa-edicao" class="mt-1 w-full input-field" placeholder="Nome da tarefa">
+                </div>
+                <div>
+                    <label for="responsavel-tarefa-edicao" class="block text-sm font-medium text-slate-700">Responsável</label>
+                    <select id="responsavel-tarefa-edicao" class="mt-1 w-full input-field">
+                        <option value="">Nenhum</option>
+                        {% for r in responsaveis %}
+                        <option value="{{ r.id }}">{{ r.nome }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="inicio-tarefa-edicao" class="block text-sm font-medium text-slate-700">Início</label>
+                    <input type="date" id="inicio-tarefa-edicao" class="mt-1 w-full input-field">
+                </div>
+                <div>
+                    <label for="fim-tarefa-edicao" class="block text-sm font-medium text-slate-700">Fim</label>
+                    <input type="date" id="fim-tarefa-edicao" class="mt-1 w-full input-field">
+                </div>
+                <div>
+                    <label for="dias-tarefa-edicao" class="block text-sm font-medium text-slate-700">Dias</label>
+                    <input type="number" id="dias-tarefa-edicao" min="1" class="mt-1 w-full input-field">
+                </div>
+                <div>
+                    <label for="conclusao-tarefa-edicao" class="block text-sm font-medium text-slate-700">Conclusão (%)</label>
+                    <input type="number" id="conclusao-tarefa-edicao" min="0" max="100" class="mt-1 w-full input-field">
+                </div>
+                <div class="col-span-2">
+                    <label for="descricao-tarefa-edicao" class="block text-sm font-medium text-slate-700">Descrição</label>
+                    <textarea id="descricao-tarefa-edicao" rows="2" class="mt-1 w-full input-field" placeholder="Descrição opcional..."></textarea>
                 </div>
 
                 <!-- === ATIVIDADES / COMENTÁRIOS === -->
-                <div class="mt-6 border-t border-gray-200 pt-4">
+                <div class="col-span-2 mt-2 border-t border-gray-200 pt-4">
                     <h4 class="font-semibold text-sm text-slate-700 mb-3">Atividades</h4>
                     <div id="lista-atividades" class="max-h-48 overflow-y-auto divide-y divide-gray-100">
                         <p class="text-xs text-gray-500 text-center p-4">Nenhuma atividade registrada.</p>
@@ -191,12 +197,30 @@
                         <button type="submit" class="btn-primary whitespace-nowrap text-sm px-3 py-1">Comentar</button>
                     </form>
                 </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" onclick="fecharModal('modal-editar-tarefa')" class="btn-secondary">Cancelar</button>
+                <button type="submit" class="btn-primary">Salvar Alterações</button>
+            </div>
+        </form>
+    </dialog>
 
-                <div class="flex justify-end gap-3 mt-6">
-                    <button type="button" onclick="document.getElementById('modal-editar-tarefa').close()" class="btn-secondary">Cancelar</button>
-                    <button type="submit" class="btn-primary">Salvar Alterações</button>
-                </div>
-            </form>
+    <!-- === MODAL CONFIGURAR COLUNAS === -->
+    <dialog id="modal-config-colunas" class="modal-config" aria-label="Configurar Colunas Kanban">
+        <div class="modal-header">
+            <h3 id="modal-config-colunas-titulo">Configurar Colunas</h3>
+            <button type="button" onclick="fecharModal('modal-config-colunas')" class="modal-close" aria-label="Fechar">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p class="text-xs text-slate-500 mb-4">Arraste para reordenar. Colunas de sistema (Backlog, Iniciar, Concluído) não podem ser removidas.</p>
+            <ul id="lista-colunas-config" class="space-y-2"></ul>
+            <button type="button" onclick="adicionarColunaConfig()" class="btn-secondary mt-4 w-full justify-center">
+                + Adicionar Coluna
+            </button>
+        </div>
+        <div class="modal-footer">
+            <button type="button" onclick="fecharModal('modal-config-colunas')" class="btn-secondary">Cancelar</button>
+            <button type="button" onclick="salvarConfiguracaoColunas()" class="btn-primary">Salvar Configuração</button>
         </div>
     </dialog>
 

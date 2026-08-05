@@ -22,21 +22,21 @@
                 </form>
             </div>
         </div>
-        <div class="flex items-center gap-3">
+<div class="flex flex-wrap items-center gap-3">
             <a href="{{ url_for('main.exportar_excel', project_id=project_id) }}" class="flex items-center gap-2 text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200">
                 Exportar Excel
             </a>
             <button onclick="window.print()" class="flex items-center gap-2 text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200">
                 Imprimir / PDF
             </button>
-            <div class="h-6 w-px bg-gray-300 mx-1"></div>
+            <div class="h-6 w-px bg-gray-300 mx-1 hidden sm:block"></div>
             <div id="save-status-container" class="flex items-center gap-3">
                 <span id="save-status" class="text-xs font-medium text-slate-500 transition-all">Salvo</span>
                 <button id="btn-undo" onclick="desfazer()" class="hidden items-center gap-2 bg-gray-200 hover:bg-gray-300 text-slate-700 px-4 py-2 rounded-lg text-sm font-semibold transition-all">
                     ↶ Desfazer
                 </button>
             </div>
-            <button onclick="adicionarLinhaVazia()" class="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow">
+            <button onclick="adicionarLinhaVazia()" class="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow whitespace-nowrap">
                 <span>+</span> Nova Linha
             </button>
         </div>

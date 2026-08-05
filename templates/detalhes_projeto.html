@@ -38,11 +38,11 @@
         <h1 class="text-lg font-bold text-slate-800">{{ projeto.nome or project_id }}</h1>
         <p class="text-xs text-slate-500 capitalize">{{ project_id }}</p>
     </div>
-    <div class="flex items-center gap-3">
-        <a href="{{ url_for('main.planilha', project_id=project_id) }}" class="flex items-center gap-2 text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200">
+<div class="flex flex-wrap items-center gap-3">
+        <a href="{{ url_for('main.planilha', project_id=project_id) }}" class="flex items-center gap-2 text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200 whitespace-nowrap">
             Planilha
         </a>
-        <a href="{{ url_for('main.backlog', project_id=project_id) }}" class="flex items-center gap-2 text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200">
+        <a href="{{ url_for('main.backlog', project_id=project_id) }}" class="flex items-center gap-2 text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200 whitespace-nowrap">
             Backlog
         </a>
     </div>
@@ -63,7 +63,7 @@
         </div>
 
 <!-- Stats -->
-        <div class="grid grid-cols-3 sm:grid-cols-6 gap-4">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
             <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
                 <div class="w-12 h-12 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center font-bold text-lg">E</div>
                 <div><p class="text-2xl font-bold text-slate-800">{{ epics|length }}</p><p class="text-xs text-slate-500 font-medium">Épicos</p></div>
@@ -251,67 +251,68 @@
 </div>
 
 <!-- Modal para Novo Item -->
-<dialog id="modal-novo-item" class="modal-config">
-    <div class="modal-body">
-        <h3 class="font-bold text-lg mb-4" id="modal-title">Novo Item</h3>
-        <form id="form-novo-item" method="POST">
-            <input type="hidden" id="tipo-novo-item" value="task">
-            <input type="hidden" id="kanban-coluna-novo-item" value="backlog">
-            <div class="grid grid-cols-2 gap-4">
-                <div class="col-span-2">
-                    <label class="block text-sm font-medium text-slate-700">Título *</label>
-                    <input type="text" id="titulo-novo-item" required class="mt-1 w-full input-field" placeholder="Nome do item">
-                </div>
-                <div class="col-span-2">
-                    <label class="block text-sm font-medium text-slate-700">Descrição</label>
-                    <textarea id="descricao-novo-item" rows="3" class="mt-1 w-full input-field" placeholder="Descreva o item..."></textarea>
-                </div>
-                <div id="criterios-field" class="col-span-2 hidden">
-                    <label class="block text-sm font-medium text-slate-700">Critérios de Aceite</label>
-                    <textarea id="criterios-novo-item" rows="3" class="mt-1 w-full input-field" placeholder="Critérios para aceitação da história..."></textarea>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700">Responsável</label>
-                    <select id="responsavel-novo-item" class="mt-1 w-full input-field">
-                        <option value="">Nenhum</option>
-                        {% for r in responsaveis %}
-                        <option value="{{ r.id }}">{{ r.nome }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-<div>
-                    <label class="block text-sm font-medium text-slate-700">Item Pai</label>
-                    <select id="parent-novo-item" class="mt-1 w-full input-field">
-                        <option value="">Nenhum</option>
-                        {% for e in epics %}
-                        <option value="{{ e.id }}" data-tipo="epic">[Épico] {{ e.tarefa or e.subtarefa or '#' ~ e.id }}</option>
-                        {% endfor %}
-                        {% for f in features %}
-                        <option value="{{ f.id }}" data-tipo="feature">[Feature] {{ f.tarefa or f.subtarefa or '#' ~ f.id }}</option>
-                        {% endfor %}
-                        {% for s in stories %}
-                        <option value="{{ s.id }}" data-tipo="story">[História] {{ s.tarefa or s.subtarefa or '#' ~ s.id }}</option>
-                        {% endfor %}
-                        {% for t in tasks %}
-                        <option value="{{ t.id }}" data-tipo="task">[Tarefa] {{ t.tarefa or t.subtarefa or '#' ~ t.id }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700">Sprint</label>
-                    <input type="text" id="sprint-novo-item" class="mt-1 w-full input-field" placeholder="Ex: Sprint 1">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700">Dias</label>
-                    <input type="number" id="dias-novo-item" min="1" value="1" class="mt-1 w-full input-field">
-                </div>
-            </div>
-            <div class="flex justify-end gap-3 mt-6">
-                <button type="button" onclick="document.getElementById('modal-novo-item').close()" class="btn-secondary">Cancelar</button>
-                <button type="submit" class="btn-primary">Criar Item</button>
-            </div>
-        </form>
+<dialog id="modal-novo-item" class="modal-config" aria-label="Novo Item">
+    <div class="modal-header">
+        <h3 id="modal-title">Novo Item</h3>
+        <button type="button" onclick="fecharModal('modal-novo-item')" class="modal-close" aria-label="Fechar">&times;</button>
     </div>
+    <form id="form-novo-item" method="POST">
+        <input type="hidden" id="tipo-novo-item" value="task">
+        <input type="hidden" id="kanban-coluna-novo-item" value="backlog">
+        <div class="modal-body grid grid-cols-2 gap-4">
+            <div class="col-span-2">
+                <label class="block text-sm font-medium text-slate-700">Título *</label>
+                <input type="text" id="titulo-novo-item" required class="mt-1 w-full input-field" placeholder="Nome do item">
+            </div>
+            <div class="col-span-2">
+                <label class="block text-sm font-medium text-slate-700">Descrição</label>
+                <textarea id="descricao-novo-item" rows="3" class="mt-1 w-full input-field" placeholder="Descreva o item..."></textarea>
+            </div>
+            <div id="criterios-field" class="col-span-2 hidden">
+                <label class="block text-sm font-medium text-slate-700">Critérios de Aceite</label>
+                <textarea id="criterios-novo-item" rows="3" class="mt-1 w-full input-field" placeholder="Critérios para aceitação da história..."></textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700">Responsável</label>
+                <select id="responsavel-novo-item" class="mt-1 w-full input-field">
+                    <option value="">Nenhum</option>
+                    {% for r in responsaveis %}
+                    <option value="{{ r.id }}">{{ r.nome }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700">Item Pai</label>
+                <select id="parent-novo-item" class="mt-1 w-full input-field">
+                    <option value="">Nenhum</option>
+                    {% for e in epics %}
+                    <option value="{{ e.id }}" data-tipo="epic">[Épico] {{ e.tarefa or e.subtarefa or '#' ~ e.id }}</option>
+                    {% endfor %}
+                    {% for f in features %}
+                    <option value="{{ f.id }}" data-tipo="feature">[Feature] {{ f.tarefa or f.subtarefa or '#' ~ f.id }}</option>
+                    {% endfor %}
+                    {% for s in stories %}
+                    <option value="{{ s.id }}" data-tipo="story">[História] {{ s.tarefa or s.subtarefa or '#' ~ s.id }}</option>
+                    {% endfor %}
+                    {% for t in tasks %}
+                    <option value="{{ t.id }}" data-tipo="task">[Tarefa] {{ t.tarefa or t.subtarefa or '#' ~ t.id }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700">Sprint</label>
+                <input type="text" id="sprint-novo-item" class="mt-1 w-full input-field" placeholder="Ex: Sprint 1">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700">Dias</label>
+                <input type="number" id="dias-novo-item" min="1" value="1" class="mt-1 w-full input-field">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" onclick="fecharModal('modal-novo-item')" class="btn-secondary">Cancelar</button>
+            <button type="submit" class="btn-primary">Criar Item</button>
+        </div>
+    </form>
 </dialog>
 
 <script>
