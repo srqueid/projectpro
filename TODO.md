@@ -1,13 +1,17 @@
-# TODO: Ajustar todos os modais do sistema
+# TODO — Tela de Cadastro de Empresas e Perfis
 
-## Passos a concluir
+## Plano Aprovado
 
-- [x] **1. base.css**: Criar sistema global de modais (.modal-config, .modal-header, .modal-body, .modal-footer, .modal-close, backdrop, animações, responsivo)
-- [x] **2. kanban.css**: Remover bloco .modal-config antigo (agora global)
-- [x] **3. base.js**: Adicionar helpers globais: fecharModal(id), fechar ao clicar no backdrop
-- [x] **4. home.html**: Carregar base.css + reestruturar modal-novo com header/body/footer padronizados + aria-label
-- [x] **5. kanban.html**: Reestruturar modal-nova-tarefa e modal-editar-tarefa + criar modal-config-colunas + botão Configurar
-- [x] **6. detalhes_projeto.html**: Reestruturar modal-novo-item com header/body/footer padronizados
-- [x] **7. backlog.html**: Reestruturar modal-planejar com header/body/footer padronizados
-- [x] **8. kanban.js**: Ajustar fluxo do modal-config-colunas (usar helper global, fechar após salvar)
-- [ ] **9. Testar todos os modais**
+1. **Backend (`app/project_manager.py`)**
+   - [x] Adicionar funções `adicionar_perfil`, `editar_perfil`, `excluir_perfil` para gerenciar perfis em `rh.perfis`.
+
+2. **Rotas (`app/routes.py`)**
+   - [x] Criar rotas `/perfis/adicionar`, `/perfis/editar/<id>`, `/perfis/excluir/<id>`.
+   - [x] Passar `perfis` para a rota `empresas()`.
+
+3. **Template (`templates/empresas.html`)**
+   - [x] Adicionar cadastro/edição de empresas (nome, CNPJ, ativo) + listagem + exclusão.
+   - [x] Adicionar seção "Perfis": cadastro (nome, descrição), listagem, edição e exclusão.
+
+## Follow-up
+- [ ] Rodar e validar a aplicação.

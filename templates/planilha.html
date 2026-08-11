@@ -36,9 +36,18 @@
                     ↶ Desfazer
                 </button>
             </div>
-            <button onclick="adicionarLinhaVazia()" class="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow whitespace-nowrap">
+<button onclick="adicionarLinhaVazia()" class="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow whitespace-nowrap">
                 <span>+</span> Nova Linha
             </button>
+            <div class="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2">
+                <label for="usuario-atual" class="text-xs font-medium text-slate-600 whitespace-nowrap">👤 Aprova:</label>
+                <select id="usuario-atual" onchange="salvarUsuarioAtual()" class="text-xs border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" title="Usuário que realiza a promoção/rebaixamento">
+                    <option value="">Nenhum</option>
+                    {% for r in responsaveis %}
+                    <option value="{{ r.id }}" data-perfil="{{ r.perfil or 'executor' }}">{{ r.nome }} ({{ perfis | selectattr('id', 'equalto', r.perfil or 'executor') | map(attribute='nome') | first }})</option>
+                    {% endfor %}
+                </select>
+            </div>
         </div>
     </header>
 
@@ -60,8 +69,8 @@
                         <th class="p-0 w-36 text-center bg-amber-50/50">Real Início</th>
                         <th class="p-0 w-36 text-center bg-amber-50/50">Real Fim</th>
                         <th class="p-0 w-44 sortable" onclick="ordenar('responsavel_id', 'texto')">Responsável <span class="sort-icon">⇅</span></th>
-                        <th class="p-0 w-24 text-center sortable" onclick="ordenar('conclusao', 'numero')">% <span class="sort-icon">⇅</span></th>
-                        <th class="p-0 w-10 text-center no-print">✕</th>
+<th class="p-0 w-24 text-center sortable" onclick="ordenar('conclusao', 'numero')">% <span class="sort-icon">⇅</span></th>
+                        <th class="p-0 w-28 text-center no-print">Tipo</th>
                     </tr>
                 </thead>
                 <tbody id="tabela-corpo">
@@ -81,8 +90,9 @@
                         <td class="p-0 border-r">
                             <input name="fase" value="{{ t.fase or '' }}" class="sheet-input" oninput="detectarMudanca()">
                         </td>
-                        <td class="p-0 border-r task-name-cell">
-                            <input name="tarefa" value="{{ t.tarefa or 'Nova Tarefa' }}" class="sheet-input" oninput="detectarMudanca()">
+<td class="p-0 border-r task-name-cell">
+                            <span class="tipo-badge-planilha tipo-{{ t.tipo or 'task' }}">{{ {'epic':'Épico','feature':'Feature','story':'História','task':'Tarefa','subtask':'Subtarefa'}.get(t.tipo, 'Tarefa') }}</span>
+                            <input name="tarefa" value="{{ t.tarefa or 'Nova Tarefa' }}" class="sheet-input" oninput="detectarMudanca()" style="display:inline;width:calc(100% - 70px);">
                         </td>
                         <td class="p-0 border-r">
                             <input name="subtarefa" value="{{ t.subtarefa or '' }}" class="sheet-input" oninput="detectarMudanca()">
@@ -119,8 +129,19 @@
                             <div class="progress-bar" style="width: {{ t.conclusao or 0 }}%;"></div>
                             <input type="number" name="conclusao" value="{{ t.conclusao or 0 }}" class="sheet-input text-center" oninput="handleConclusionChange(this)">
                         </td>
-                        <td class="p-0 text-center no-print">
-                            <button onclick="confirmDeleteRow(this.closest('tr'))" class="w-full h-full text-gray-300 hover:text-red-500">✕</button>
+<td class="p-0 text-center no-print">
+                            <div class="flex items-center gap-1 px-1">
+                                <select name="tipo" class="tipo-select" onchange="onTipoChange(this)" title="Alterar tipo do item">
+                                    <option value="epic" {% if (t.tipo or 'task') == 'epic' %}selected{% endif %}>Épico</option>
+                                    <option value="feature" {% if (t.tipo or 'task') == 'feature' %}selected{% endif %}>Feature</option>
+                                    <option value="story" {% if (t.tipo or 'task') == 'story' %}selected{% endif %}>História</option>
+                                    <option value="task" {% if (t.tipo or 'task') == 'task' %}selected{% endif %}>Tarefa</option>
+                                    <option value="subtask" {% if (t.tipo or 'task') == 'subtask' %}selected{% endif %}>Subtarefa</option>
+                                </select>
+                                <button type="button" onclick="promoverItem(this.closest('tr'))" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-indigo-600 text-sm" title="Promover (subir um nível na hierarquia)">▲</button>
+                                <button type="button" onclick="rebaixarItem(this.closest('tr'))" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-amber-600 text-sm" title="Rebaixar (descer um nível na hierarquia)">▼</button>
+                                <button onclick="confirmDeleteRow(this.closest('tr'))" class="w-6 h-6 flex items-center justify-center text-gray-300 hover:text-red-500 text-xs">✕</button>
+                            </div>
                             <input type="hidden" name="modulo" value="{{ t.modulo or '' }}">
                             <input type="hidden" name="kanban_coluna_id" value="{{ t.kanban_coluna_id or 'backlog' }}">
                             <input type="hidden" name="parent_id" value="{{ t.parent_id or '' }}">
@@ -133,8 +154,9 @@
     </div>
 
     <script>
-        const projectRecalcularUrl = "/projeto/{{ project_id }}/recalcular_rapido";
+const projectRecalcularUrl = "/projeto/{{ project_id }}/recalcular_rapido";
         const projectSalvarUrl = "{{ url_for('main.salvar_lote', project_id=project_id) }}";
+        const projectId = "{{ project_id }}";
         const initialTasks = {{ tarefas|tojson }};
         const responsaveis = {{ responsaveis|tojson }};
         const colunaAndamentoId = "{{ coluna_andamento_id }}";

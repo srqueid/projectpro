@@ -21,12 +21,13 @@ SECRET_KEY = 'segredo_desenvolvimento'
 DATABASE_URI = "postgresql://postgres:Localhost@localhost:5432/db_projectpro"
 # --- SCHEMAS POR DOMÍNIO ---
 # Separação do banco em schemas por domínio, sem utilizar o schema 'public'.
+SCHEMA_CORE = 'core'                # Núcleo multi-tenant: empresas
 SCHEMA_RH = 'rh'                    # Recursos Humanos: responsaveis, ferias, times, responsaveis_times
 SCHEMA_PROJETO = 'projeto'          # Projetos: projetos, tarefas, kanban_colunas, tarefa_atividades, projeto_configuracoes
 SCHEMA_CONFIG = 'config'            # Configurações: configuracoes, feriados_customizados
 
 # search_path usado em todas as conexões (inclui public para a extensão uuid-ossp)
-SEARCH_PATH = [SCHEMA_RH, SCHEMA_PROJETO, SCHEMA_CONFIG, 'public']
+SEARCH_PATH = [SCHEMA_CORE, SCHEMA_RH, SCHEMA_PROJETO, SCHEMA_CONFIG, 'public']
 
 # --- FERIADOS ---
 # Lista de feriados usada como fallback se a biblioteca 'holidays' não estiver instalada

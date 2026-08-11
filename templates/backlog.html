@@ -53,36 +53,70 @@
 <div class="flex-1 overflow-auto p-6">
     <div class="max-w-6xl mx-auto space-y-8">
 
+        <!-- Macro recursiva para renderizar a hierarquia (Épico → Feature → História → Tarefa → Subtarefa) -->
+        {% macro render_item(t, depth, items_list) %}
+        <div class="backlog-item-h">
+            <div class="backlog-item backlog-tipo flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg border {% if t.planejado %}bg-blue-50/30 border-blue-100{% else %}bg-gray-50 border-gray-200 hover:border-blue-300{% endif %}" data-tipo="{{ t.tipo or 'task' }}">
+                <div class="flex flex-wrap items-center gap-3 flex-1 min-w-0">
+                    <span class="tipo-badge tipo-{{ t.tipo or 'task' }}">
+                        {% if t.tipo == 'epic' %}Épico
+                        {% elif t.tipo == 'feature' %}Feature
+                        {% elif t.tipo == 'story' %}História
+                        {% elif t.tipo == 'subtask' %}Subtarefa
+                        {% else %}Tarefa{% endif %}
+                    </span>
+                    <span class="font-medium text-slate-800 break-words">{{ t.tarefa or t.subtarefa or 'Sem nome' }}</span>
+                    {% if t.sprint %}
+                    <span class="planejado-badge">{{ t.sprint }}</span>
+                    {% endif %}
+                    {% if t.responsavel_id %}
+                    {% set resp = responsaveis | selectattr('id', 'equalto', t.responsavel_id) | first %}
+                    {% if resp %}
+                    <span class="text-xs text-slate-500">👤 {{ resp.nome }}</span>
+                    {% endif %}
+                    {% endif %}
+                </div>
+                <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                    <span>📊 {{ t.conclusao or 0 }}%</span>
+                    <span class="font-mono">#{{ t.id }}</span>
+                    {% if t.planejado %}
+                    <button onclick="desplanejar({{ t.id }})" class="text-amber-600 hover:text-amber-800 font-medium px-2 py-1 hover:bg-amber-50 rounded transition-all whitespace-nowrap" title="Remover do planejamento">
+                        Mover para Backlog
+                    </button>
+                    {% else %}
+                    <button onclick="planejar({{ t.id }})" class="text-blue-600 hover:text-blue-800 font-medium px-2 py-1 hover:bg-blue-50 rounded transition-all whitespace-nowrap" title="Planejar para um sprint">
+                        Planejar ➔
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+            {% set children = items_list | selectattr('parent_id', 'equalto', t.id) | list %}
+            {% if children %}
+            <div class="mt-2 space-y-2 border-l-2 border-gray-200 ml-4 pl-4">
+                {% for c in children %}
+                {{ render_item(c, depth + 1, items_list) }}
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endmacro %}
+
         <!-- Itens Planejados -->
         <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-lg font-bold text-slate-800">✅ Planejados ({{ planned_items|length }})</h2>
             </div>
             {% if planned_items %}
+            {% set planned_ids = planned_items | map(attribute='id') | list %}
+            {% set planned_roots = [] %}
+            {% for t in planned_items %}
+            {% if not t.get('parent_id') or t.get('parent_id') not in planned_ids %}
+            {% set _ = planned_roots.append(t) %}
+            {% endif %}
+            {% endfor %}
             <div class="space-y-2">
-                {% for t in planned_items %}
-<div class="backlog-item flex flex-wrap items-center justify-between gap-3 p-3 bg-blue-50/30 rounded-lg border border-blue-100">
-                    <div class="flex flex-wrap items-center gap-3 flex-1 min-w-0">
-                        <span class="tipo-badge tipo-{{ t.tipo or 'task' }}">
-                            {% if t.tipo == 'epic' %}Épico
-                            {% elif t.tipo == 'feature' %}Feature
-                            {% elif t.tipo == 'story' %}História
-                            {% elif t.tipo == 'subtask' %}Subtarefa
-                            {% else %}Tarefa{% endif %}
-                        </span>
-                        <span class="font-medium text-slate-800 break-words">{{ t.tarefa or t.subtarefa or 'Sem nome' }}</span>
-                        {% if t.sprint %}
-                        <span class="planejado-badge">{{ t.sprint }}</span>
-                        {% endif %}
-                    </div>
-                    <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                        <span>📊 {{ t.conclusao or 0 }}%</span>
-                        <span class="font-mono">#{{ t.id }}</span>
-                        <button onclick="desplanejar({{ t.id }})" class="text-amber-600 hover:text-amber-800 font-medium px-2 py-1 hover:bg-amber-50 rounded transition-all whitespace-nowrap" title="Remover do planejamento">
-                            Mover para Backlog
-                        </button>
-                    </div>
-                </div>
+                {% for r in planned_roots %}
+                {{ render_item(r, 0, planned_items) }}
                 {% endfor %}
             </div>
             {% else %}
@@ -95,7 +129,7 @@
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-lg font-bold text-slate-800">📦 Backlog ({{ backlog_items|length }})</h2>
                 <div class="flex gap-2">
-                    <select id="filtro-tipo" onchange="filtrarBacklog()" class="text-sm border-gray-300 rounded-lg px-3 py-2">
+                    <select id="filtro-tipo" onchange="filtrarBacklog()" aria-label="Filtrar por tipo" class="text-sm border-gray-300 rounded-lg px-3 py-2">
                         <option value="todos">Todos os tipos</option>
                         <option value="epic">Épicos</option>
                         <option value="feature">Features</option>
@@ -106,33 +140,16 @@
                 </div>
             </div>
             {% if backlog_items %}
+            {% set backlog_ids = backlog_items | map(attribute='id') | list %}
+            {% set backlog_roots = [] %}
+            {% for t in backlog_items %}
+            {% if not t.get('parent_id') or t.get('parent_id') not in backlog_ids %}
+            {% set _ = backlog_roots.append(t) %}
+            {% endif %}
+            {% endfor %}
             <div class="space-y-2" id="lista-backlog">
-                {% for t in backlog_items %}
-                <div class="backlog-item flex flex-wrap items-center justify-between gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-blue-300 backlog-tipo" data-tipo="{{ t.tipo or 'task' }}">
-                    <div class="flex flex-wrap items-center gap-3 flex-1 min-w-0">
-                        <span class="tipo-badge tipo-{{ t.tipo or 'task' }}">
-                            {% if t.tipo == 'epic' %}Épico
-                            {% elif t.tipo == 'feature' %}Feature
-                            {% elif t.tipo == 'story' %}História
-                            {% elif t.tipo == 'subtask' %}Subtarefa
-                            {% else %}Tarefa{% endif %}
-                        </span>
-                        <span class="font-medium text-slate-800 break-words">{{ t.tarefa or t.subtarefa or 'Sem nome' }}</span>
-                        {% if t.responsavel_id %}
-                        {% set resp = responsaveis | selectattr('id', 'equalto', t.responsavel_id) | first %}
-                        {% if resp %}
-                        <span class="text-xs text-slate-500">👤 {{ resp.nome }}</span>
-                        {% endif %}
-                        {% endif %}
-                    </div>
-                    <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                        <span>📊 {{ t.conclusao or 0 }}%</span>
-                        <span class="font-mono">#{{ t.id }}</span>
-                        <button onclick="planejar({{ t.id }})" class="text-blue-600 hover:text-blue-800 font-medium px-2 py-1 hover:bg-blue-50 rounded transition-all whitespace-nowrap" title="Planejar para um sprint">
-                            Planejar ➔
-                        </button>
-                    </div>
-                </div>
+                {% for r in backlog_roots %}
+                {{ render_item(r, 0, backlog_items) }}
                 {% endfor %}
             </div>
             {% else %}

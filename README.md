@@ -1,249 +1,135 @@
-# 📋 ProjectPro — Sistema de Gestão de Projetos e Cronogramas
+# WorkFlow Platform
 
-**ProjectPro** é uma aplicação web completa para gestão de projetos, planejamento de cronogramas, acompanhamento de tarefas em **Kanban**, **Planilha** interativa e **Gantt** (Timeline). Construída com **Flask (Python)**, banco de dados **PostgreSQL** e interface moderna com **Tailwind CSS**.
+## 1. Product Vision
 
----
+The WorkFlow Platform is a versatile and extensible system designed to help organizations create and manage structured work. It allows for the creation of projects and the management of tasks using different workflow models, catering to a wide range of business needs beyond software development.
 
-## 🚀 Funcionalidades Principais
+### Application Examples:
 
-### 📂 Gestão de Projetos
-- **Criar projeto** do zero (planilha em branco) ou **importar via CSV**
-- **Listar projetos** em dashboard com estatísticas de progresso (média %, concluídas, em andamento)
-- **Excluir projetos** com confirmação
-- **Descrição do projeto** (objetivo macro) editável
-- **Associação de time** ao projeto
+-   **Development:** Manage software, bugs, and releases.
+-   **HR:** Handle recruitment, onboarding, and evaluations.
+-   **Marketing:** Coordinate campaigns, content creation, and ad management.
+-   **Events:** Plan and execute events from start to finish.
+-   **Finance:** Oversee financial processes and approvals.
+-   **Legal:** Manage legal cases and documents.
+-   **Construction:** Track projects, activities, and suppliers.
+-   **Administrative:** Handle internal requests and processes.
+-   **Operations:** Manage work orders and operational activities.
 
-### 🗂️ Hierarquia de Itens (Épico > Feature > História > Tarefa > Subtarefa)
-- **Épico** — maior agrupamento de trabalho (nível mais alto)
-- **Feature** — funcionalidade/módulo, filha de Épico
-- **História (Story)** — requisito do ponto de vista do usuário, com **critérios de aceite**
-- **Tarefa** — passo técnico para completar histórias
-- **Subtarefa** — detalhamento da tarefa
-- Criação de itens via modal com **regras de hierarquia** (cada tipo só pode ter pais permitidos)
-- Visualização em **Detalhes do Projeto** com cards por tipo, badges coloridos e estatísticas
-- **Validação de referência circular** na hierarquia pai-filho (backend e frontend)
+The platform is designed to be domain-agnostic, with software development being just one of many configurable domains.
 
-### 📊 Planilha (Spreadsheet Interativa)
-- Edição **inline** em tabela estilo Excel (Fase, Tarefa, Subtarefa, Datas, Dias, Predecessora, Responsável, %)
-- **Salvamento automático** (autosave com debounce) com indicador de status
-- **Desfazer (Undo)** — histórico de alterações
-- **Recálculo automático de datas** em cascata ao alterar dias, predecessoras ou datas
-- **Ordenação** por colunas (ID, Fase, Tarefa, Dias, Predecessora, Responsável, %)
-- **Reordenação de linhas** e **colunas** via drag-and-drop
-- **Hierarquia pai-filho visual**: indentação, expandir/recolher, vincular linha à linha acima (com proteção contra ciclos)
-- **Validação de datas**: fim não pode ser anterior ao início (real e planejado)
-- **Conflito de férias**: alerta visual ⚠️ quando a tarefa conflita com férias do responsável
-- **Mover para "Em Andamento"** automaticamente ao preencher data de início
-- **Definir restrição manual de início** (RN015) com alerta de conflito com predecessora
-- **Excluir tarefas** com filhos (revincula filhos ao avô)
-- **Alteração de tipo** inline (Épico/Feature/História/Tarefa/Subtarefa) com badge visual
-- **Exportar para Excel** (.xlsx)
-- **Imprimir / PDF**
-- **Modelo de importação CSV** para download
+## 2. Architectural Principles
 
-### 📋 Backlog & Planejamento de Sprints
-- Lista de **itens não planejados** (backlog) com filtro por tipo
-- **Planejar item** para um Sprint (aparece no Kanban)
-- **Desplanejar** item (volta ao backlog)
-- Separação visual entre **Planejados** e **Backlog**
+The platform is structured around four main levels:
 
-### 🗂️ Kanban Board
-- **Drag-and-drop** de cards entre colunas (SortableJS)
-- **4 colunas padrão**: 📋 Backlog → 🚀 Iniciar → ⚙️ Em Andamento → ✅ Concluído
-- **Configuração de colunas** (RN020): criar, renomear, reordenar, definir % de progresso padrão
-- **Atribuição automática de datas**: início ao entrar em "Iniciar"/"Em Andamento", fim ao concluir
-- **RN019**: concluir tarefa na coluna final (conclusão = 100% e data de fim)
-- **RN018**: exigir responsável para mover para coluna "Iniciar"
-- **RN022**: preencher data de início ao mover para "Em Andamento"
-- **RN023**: **bloqueio por dependência** — tarefa com predecessora não concluída fica bloqueada (🔒)
-- **RN024**: **tarefas vencidas/em atraso** — destaque visual com badge de dias de atraso
-- **Fluxo com allow_back**: configurar se a coluna permite movimento reverso (voltar)
-- **Edição de tarefa** em modal com histórico de **atividades e comentários**
-- **Avatar colorido** do responsável com iniciais
-- **Nova tarefa** diretamente em qualquer coluna
-- **Replanejar tarefa**: limpa datas e volta ao backlog
+1.  **ORGANIZATION:** Represents the top-level entity, such as a company or institution.
+    -   **Projects:** Contains individual projects.
+    -   **Teams:** Groups of users within the organization.
+    -   **Users:** Individuals who are part of the organization.
+2.  **PROJECT:** A specific initiative or work context.
+    -   **Workflow:** The set of stages that work items pass through.
+    -   **Issue Types:** The types of work items (e.g., Task, Bug, Story).
+    -   **Rules:** Business logic and automation rules.
+3.  **ISSUES:** The fundamental units of work.
+    -   **Task, Story, Bug:** Examples of issue types.
+    -   **Subtasks:** Smaller work items related to a parent issue.
 
-### 📈 Cronograma (Gantt / Timeline)
-- Gráfico de Gantt com **Frappe Gantt**
-- **Barra de Planejamento (baseline)** e **barra de Execução Real** lado a lado
-- **Cores de status**:
-  - 🔵 Planejamento
-  - 🟢 Execução (no prazo)
-  - 🟠 Atraso leve (até o limite da tolerância)
-  - 🔴 Atraso grave (acima da tolerância)
-- **Dependências entre tarefas** (setas de predecessoras)
-- **Zoom**: 6h, 12h, Dia, Semana, Mês (botões ou Ctrl + Scroll)
-- **Tooltip** com detalhes (tipo, datas, progresso)
-- **Tela cheia** (fullscreen) e **Imprimir PDF**
-- **Tolerância de atraso configurável** por projeto (% sobre a duração planejada)
+The term "Issue" is used internally as a generic concept for any work item, not just software-related tickets. This allows for flexibility in representing different types of work, such as an HR selection process or a marketing campaign.
 
-### 👥 Responsáveis (Recursos Humanos)
-- Cadastro de **responsáveis** (nome, e-mail, modelo de trabalho, horas semanais)
-- **Períodos de férias** múltiplos por responsável
-- Modelos de trabalho: Home Office, Híbrido, Alocado
-- **Cálculo de datas** ignora férias dos responsáveis e alerta conflitos
-- Editar e excluir responsáveis
+## 3. Conceptual Model
 
-### 👥 Times (Equipes)
-- Cadastro de **times** com membros (relação N:M com responsáveis)
-- **Associação de time** ao projeto
-- Editar e excluir times
+The main entities of the platform are:
 
-### 📅 Feriados e Bloqueios
-- **Feriados nacionais** do Brasil (biblioteca `holidays`, com fallback manual)
-- **Feriados customizados** (adicionar manualmente ou **importar CSV**)
-- **Bloquear fins de semana** (Sáb/Dom) no cálculo de datas (configurável)
-- O cálculo de dias úteis considera feriados e fins de semana
+-   **Organization:** The root-level container for all other entities.
+    -   **User:** An individual with access to the platform.
+    -   **Team:** A group of users.
+    -   **Project:** A container for work items and related settings.
+        -   **Project Settings:** Configuration options for the project.
+        -   **Workflow:** The defined workflow for the project.
+        -   **Issue Types:** The types of work items used in the project.
+        -   **Custom Fields:** Additional fields for work items.
+        -   **Board:** A visual representation of the workflow.
+        -   **Backlog:** A list of work items to be done.
+        -   **Automation:** Rules for automating tasks.
+        -   **Reports:** Data and metrics about the project.
 
-### 📝 Atividades e Comentários
-- **Log de alterações** automático (campo alterado, de X para Y)
-- **Comentários** por tarefa com autor e data/hora
-- Exibição no modal de edição do Kanban
+-   **Work Items:** The individual tasks or items of work within a project.
+    -   **Epic, Story, Task, Bug, Request, Approval, Subtask:** These are examples of work item types, but they are not mandatory. Projects can define their own types.
 
-### 🔄 Recálculo de Datas em Cascata
-- Usa **baseline_inicio/baseline_fim** (planejado) e **inicio/fim** (real)
-- Considera **predecessoras** (fim da predecessora define início da sucessora)
-- Aplica **restrições manuais** (início não antes de)
-- **Agrega datas dos filhos nos pais**: pai começa no início da primeira filha e termina no fim da última
-- Ignora **feriados, fins de semana (opcional) e férias**
+## 4. Key Features
 
----
+### Multi-Organization Support
 
-## ⚙️ Requisitos / Regras de Negócio (RN) Implantados
+A user can be a member of multiple organizations, making the platform suitable for SaaS (Software as a Service) offerings.
 
-| Código | Requisito | Status |
-|--------|-----------|--------|
-| RN015 | Restrição manual de data de início com alerta de conflito com predecessora | ✅ |
-| RN016 | Recalcular o projeto ao concluir tarefa (adiantar sucessoras) | ✅ |
-| RN018 | Exigir responsável atribuído para mover tarefa para "Iniciar" | ✅ |
-| RN019 | Concluir tarefa ao movê-la para coluna final (fim + 100%) | ✅ |
-| RN020 | Configuração de colunas do Kanban (criar, renomear, reordenar) | ✅ |
-| RN022 | Preencher data de início ao mover para coluna "Em Andamento" | ✅ |
-| RN023 | Bloqueio de tarefa por dependência de predecessora não concluída | ✅ |
-| RN024 | Identificação de tarefas vencidas/em atraso (dias de atraso) | ✅ |
-| — | Hierarquia Épico > Feature > História > Tarefa > Subtarefa | ✅ |
-| — | Validação de referência circular na hierarquia | ✅ |
-| — | Fluxo de transição entre colunas com `allow_back` | ✅ |
-| — | Recálculo automático de datas em cascata | ✅ |
-| — | Salvamento automático com desfazer (undo) | ✅ |
-| — | Conflito de férias do responsável no agendamento | ✅ |
+### Users and Teams
 
----
+-   **User Entity:** Contains basic user information, including `id`, `name`, `email`, and `status`.
+-   **Teams:** Organizations can create teams to group users. A user can belong to multiple teams.
 
-## 🛠️ Tecnologias Utilizadas
+### Roles and Permissions
 
-### Backend
-- **Python 3** / **Flask**
-- **psycopg2** — driver PostgreSQL
-- **pandas** — importação/exportação de planilhas
-- **openpyxl** — exportação Excel
-- **holidays** — feriados nacionais brasileiros
-- **gunicorn** — servidor WSGI (produção)
+The platform uses Role-Based Access Control (RBAC) with granular permissions. Roles can be defined at both the organization and project levels, and permissions can be customized.
 
-### Frontend
-- **Tailwind CSS** (via CDN/CLI)
-- **SortableJS** — drag-and-drop
-- **Frappe Gantt** — gráfico de Gantt
-- **Inter font** (Google Fonts)
+-   **Organization Roles:** Owner, Admin, Member.
+-   **Project Roles:** Admin, Manager, Contributor, Viewer.
 
-### Banco de Dados
-- **PostgreSQL** (schema versionado em `schema.sql` com migrações idempotentes em `app/migrations.py`)
-- **Schemas por domínio** (sem utilizar o schema `public`):
-  - `rh` → Recursos Humanos: `responsaveis`, `ferias`, `times`, `responsaveis_times`
-  - `projeto` → Projetos: `projetos`, `tarefas`, `kanban_colunas`, `tarefa_atividades`, `projeto_configuracoes`
-  - `config` → Configurações: `configuracoes`, `feriados_customizados`
-- O `search_path` da conexão é configurado em `app/config.py` (`SEARCH_PATH`) e aplicado em `app/database.py`.
-- A extensão `uuid-ossp` permanece no schema `public`, que é incluído no `search_path` para manter a função `uuid_generate_v4()` acessível.
+### Project Templates
 
----
+To streamline project creation, the platform will offer project templates for different methodologies, such as Kanban, Scrum, Marketing, and HR. Users will also be able to create their own custom templates.
 
-## 📁 Estrutura do Projeto
+### Issue Engine
 
-```
-projectpro/
-├── run.py                        # Entrada da aplicação (porta 5051 em dev)
-├── schema.sql                    # Script de criação de tabelas (PostgreSQL)
-├── requirements.txt              # Dependências Python
-├── package.json                  # Dependências npm (Tailwind)
-├── README.md                     # Este arquivo
-├── TODO.md                       # Histórico de melhorias implantadas
-├── app/
-│   ├── __init__.py               # Factory da aplicação Flask
-│   ├── config.py                 # Configurações (paths, banco, feriados)
-│   ├── database.py               # Conexão com PostgreSQL
-│   ├── migrations.py             # Migrações evolutivas idempotentes
-│   ├── project_manager.py        # Regras de negócio (cálculos, kanban, etc.)
-│   ├── routes.py                 # Rotas HTTP da aplicação
-│   └── utils.py                  # Funções utilitárias (datas, feriados)
-├── static/                       # CSS e JS
-│   ├── tailwind.css              # CSS compilado do Tailwind
-│   ├── theme.css                 # Tema e estilos globais
-│   ├── base.js                   # Sidebar e utilitários
-│   ├── kanban.js                 # Lógica do Kanban
-│   ├── planilha.js               # Lógica da planilha (autosave, hierarquia)
-│   └── cronograma.js             # Lógica do Gantt
-├── templates/                    # Templates Jinja2
-│   ├── base.html                 # Layout base (sidebar)
-│   ├── home.html                 # Dashboard de projetos
-│   ├── detalhes_projeto.html     # Detalhes e hierarquia
-│   ├── backlog.html              # Backlog e planejamento
-│   ├── planilha.html             # Planilha interativa
-│   ├── kanban.html               # Kanban board
-│   ├── cronograma.html           # Gantt/Timeline
-│   ├── configuracoes.html        # Configurações gerais
-│   └── configuracoes_projeto.html# Configurações do projeto
-├── data/                         # Dados locais (se aplicável)
-├── projects/                     # Pastas de projetos (se aplicável)
-└── tests/                        # Testes unitários
-```
+The core of the platform is a flexible "Issue Engine" that uses a generic `work_items` table with configurable `work_item_types`. This allows different projects to define their own types of work, such as "Bug" for software, "Campaign" for marketing, or "Candidate" for HR.
 
----
+### Custom Fields
 
-## 🧪 Testes
+Projects can define custom fields for their work items, allowing them to capture domain-specific information. For example, an HR project might have fields for "Salary" and "Interview Date," while a marketing project could have fields for "Campaign" and "Budget."
 
-Os testes unitários estão em `tests/test_project_manager.py` e cobrem a lógica do Kanban config:
+### Workflow Engine
 
-```bash
-python -m unittest discover tests
-```
+The workflow engine is also highly configurable, allowing projects to define their own statuses and transitions. Transition rules can be set up to enforce specific conditions before a work item can move from one status to another.
 
----
+### Automation
 
-## 🚀 Como Executar Localmente
+The platform will support automation based on the "Event-Condition-Action" model. For example, when a work item's status changes to "Approved," an automated action could be triggered to send a notification or create a new task.
 
-### 1. Pré-requisitos
-- Python 3.10+
-- Node.js (para Tailwind, opcional)
-- PostgreSQL (ou usar a string de conexão existente no `app/config.py`)
+### Dependencies and Blockers
 
-### 2. Instalar dependências Python
-```bash
-pip install -r requirements.txt
-```
+Work items can have dependencies on each other (e.g., "WorkItem A blocks WorkItem B"). The system will also allow for the tracking of blockers, providing insights into impediments.
 
-### 3. Instalar dependências Node (opcional — para recompilar Tailwind)
-```bash
-npm install
-npm run build:css   # recompila o static/tailwind.css
-```
+## 5. Core Business Rules
 
-### 4. Inicializar o banco de dados
-```bash
-flask --app run init-db
-```
-> A string de conexão está em `app/config.py` (`DATABASE_URI`). Para produção, use variável de ambiente.
+-   **RN-001 (Identification):** Every work item must have a unique identifier within its project.
+-   **RN-002 (Status):** Every work item must have a valid status from the project's workflow.
+-   **RN-003 (Transition):** Work items can only change status through a permitted transition.
+-   **RN-004 (Permission):** Users can only perform actions for which they have permission.
+-   **RN-005 (Audit):** All significant changes must be logged in an audit trail.
 
-### 5. Executar a aplicação
-```bash
-python run.py
-```
-Acesse: **http://localhost:5051**
+## 6. Modular Architecture
 
----
+To keep the core of the platform generic, domain-specific features will be implemented as optional modules or extensions.
 
-## 📌 Observações
+-   **Core:** Work Items, Workflow, Users, Projects, Permissions, Dependencies, Automation, Notifications.
+-   **Extensions:**
+    -   **Software:** Git integration, Pull Requests, CI/CD.
+    -   **Scrum:** Sprints, Burndown charts, Velocity.
+    -   **Kanban:** WIP limits, Lead Time, Cycle Time.
+    -   **Marketing:** Campaign management, Content approvals.
+    -   **HR:** Candidate tracking, Interview scheduling.
+This modular approach is crucial to prevent the core from becoming too software-centric.
 
-- O banco de dados usa **PostgreSQL na nuvem (Neon)** já configurado em `app/config.py`.
-- As **migrações** são executadas automaticamente na inicialização da aplicação (`app/migrations.py`) e são **idempotentes** (seguras para rodar múltiplas vezes).
-- Em produção, recomenda-se servir com **gunicorn** e configurar a `DATABASE_URI` e `SECRET_KEY` via **variáveis de ambiente**.
+## 7. MVP (Minimum Viable Product)
 
+The initial version of the platform will focus on the following features:
+
+-   **Foundation:** Organization, Users, Teams, Roles, Permissions, Projects.
+-   **Work Management:**
+    -   **Work Items:** Configurable types, priority, assignee, comments, attachments, and history.
+    -   **Workflow:** Custom statuses, transitions, and rules.
+    -   **Board:** Columns, drag-and-drop functionality, filters, and WIP limits.
+    -   **Dependencies:** Support for "blocks" and "is blocked by" relationships.
+-   **Automation:** Basic triggers, conditions, and actions.
+-   **Dashboard:** Simple reporting on open, in-progress, completed, blocked, and overdue items.
+
+This MVP will provide a functional work management platform that can be extended with more specialized features in the future.

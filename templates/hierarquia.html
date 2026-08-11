@@ -1,0 +1,141 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<style>
+    .tipo-badge { font-size: 0.65rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 999px; text-transform: uppercase; }
+    .tipo-epic { background: #ede9fe; color: #7c3aed; }
+    .tipo-feature { background: #ffedd5; color: #c2410c; }
+    .tipo-story { background: #dbeafe; color: #2563eb; }
+    .tipo-task { background: #d1fae5; color: #059669; }
+    .tipo-subtask { background: #f3f4f6; color: #4b5563; }
+    .tree-line { border-left: 2px solid #e2e8f0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0 shadow-sm z-10">
+    <div>
+        <h1 class="text-lg font-bold text-slate-800">🌳 Hierarquia do Projeto</h1>
+        <p class="text-xs text-slate-500 capitalize">{{ empresa.nome }} — {{ project_id }}</p>
+    </div>
+<div class="flex items-center gap-3">
+        <a href="{{ url_for('main.hierarquia_backlog', empresa_id=empresa_id, project_id=project_id) }}" class="text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-lg text-sm font-medium border border-blue-200 whitespace-nowrap">📋 Ver Backlog</a>
+        <a href="{{ url_for('main.empresas') }}" class="text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200">Voltar</a>
+    </div>
+</header>
+
+<div class="flex-1 overflow-auto p-6">
+    <div class="max-w-5xl mx-auto space-y-6">
+
+        <!-- Formulário: Novo Épico -->
+        <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+            <h2 class="text-lg font-bold text-slate-800 mb-4">+ Novo Épico</h2>
+            <form action="{{ url_for('main.hierarquia_adicionar_epico', empresa_id=empresa_id, project_id=project_id) }}" method="POST" class="flex flex-wrap gap-3 items-end">
+                <div class="flex-1 min-w-[200px]">
+                    <label class="block text-sm font-medium text-slate-700">Título</label>
+                    <input type="text" name="titulo" required class="mt-1 w-full input-field" placeholder="Ex: Transformação Digital">
+                </div>
+                <div class="flex-1 min-w-[200px]">
+                    <label class="block text-sm font-medium text-slate-700">Descrição</label>
+                    <input type="text" name="descricao" class="mt-1 w-full input-field">
+                </div>
+                <button type="submit" class="btn-primary">Criar Épico</button>
+            </form>
+        </div>
+
+        <!-- Lista Hierárquica -->
+        <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+            <h2 class="text-lg font-bold text-slate-800 mb-4">Estrutura ({{ hierarquia|length }} épicos)</h2>
+            {% if hierarquia %}
+            <div class="space-y-4">
+                {% for epico in hierarquia %}
+                <!-- ÉPICO -->
+                <div class="border border-purple-200 rounded-xl overflow-hidden">
+                    <div class="bg-purple-50/50 p-4 flex items-center justify-between">
+                        <div class="flex items-center gap-3 flex-1 min-w-0">
+                            <span class="tipo-badge tipo-epic">Épico</span>
+                            <span class="font-bold text-slate-800">{{ epico.titulo }}</span>
+                            {% if epico.descricao %}<span class="text-xs text-slate-500 truncate">{{ epico.descricao }}</span>{% endif %}
+                        </div>
+                        <form action="{{ url_for('main.hierarquia_excluir_epico', empresa_id=empresa_id, project_id=project_id, item_id=epico.id) }}" method="POST" onsubmit="return confirm('Excluir épico e todo o subtree?');">
+                            <button class="text-red-400 hover:text-red-600 text-xs font-medium px-2 py-1 hover:bg-red-50 rounded">Excluir</button>
+                        </form>
+                    </div>
+
+                    <!-- Features dentro do épico -->
+                    <div class="pl-6 pr-4 py-3 tree-line ml-6 space-y-3">
+                        {% for feature in epico.features %}
+                        <div class="border border-orange-200 rounded-lg">
+                            <div class="bg-orange-50/40 p-3 flex items-center justify-between">
+                                <div class="flex items-center gap-2 flex-1 min-w-0">
+                                    <span class="tipo-badge tipo-feature">Feature</span>
+                                    <span class="font-semibold text-slate-800">{{ feature.titulo }}</span>
+                                </div>
+                                <form action="{{ url_for('main.hierarquia_excluir_feature', empresa_id=empresa_id, project_id=project_id, item_id=feature.id) }}" method="POST" onsubmit="return confirm('Excluir feature e todo o subtree?');">
+                                    <button class="text-red-400 hover:text-red-600 text-xs font-medium px-2 py-1 hover:bg-red-50 rounded">Excluir</button>
+                                </form>
+                            </div>
+                            <!-- Histórias dentro da feature -->
+                            <div class="pl-6 pr-4 py-2 tree-line ml-6 space-y-2">
+                                {% for historia in feature.historias %}
+                                <div class="border border-blue-200 rounded-lg">
+                                    <div class="bg-blue-50/40 p-3 flex items-center justify-between">
+                                        <div class="flex items-center gap-2 flex-1 min-w-0">
+                                            <span class="tipo-badge tipo-story">História</span>
+                                            <span class="font-medium text-slate-800">{{ historia.titulo }}</span>
+                                            {% if historia.pontos %}<span class="text-xs text-slate-400">({{ historia.pontos }} pts)</span>{% endif %}
+                                        </div>
+                                        <form action="{{ url_for('main.hierarquia_excluir_historia', empresa_id=empresa_id, project_id=project_id, item_id=historia.id) }}" method="POST" onsubmit="return confirm('Excluir história?');">
+                                            <button class="text-red-400 hover:text-red-600 text-xs font-medium px-2 py-1 hover:bg-red-50 rounded">Excluir</button>
+                                        </form>
+                                    </div>
+                                    <!-- Tarefas dentro da história -->
+                                    <div class="pl-6 pr-4 py-2 tree-line ml-6 space-y-2">
+                                        {% for tarefa in historia.tarefas %}
+                                        <div class="border border-emerald-200 rounded-lg">
+                                            <div class="bg-emerald-50/40 p-3 flex items-center justify-between">
+                                                <div class="flex items-center gap-2 flex-1 min-w-0">
+                                                    <span class="tipo-badge tipo-task">Tarefa</span>
+                                                    <span class="font-medium text-slate-800">{{ tarefa.titulo }}</span>
+                                                    {% if tarefa.sprint %}<span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Sprint: {{ tarefa.sprint }}</span>{% endif %}
+                                                </div>
+                                                <form action="{{ url_for('main.hierarquia_excluir_tarefa', empresa_id=empresa_id, project_id=project_id, item_id=tarefa.id) }}" method="POST" onsubmit="return confirm('Excluir tarefa e subtarefas?');">
+                                                    <button class="text-red-400 hover:text-red-600 text-xs font-medium px-2 py-1 hover:bg-red-50 rounded">Excluir</button>
+                                                </form>
+                                            </div>
+                                            <!-- Subtarefas -->
+                                            {% if tarefa.subtarefas %}
+                                            <div class="pl-6 pr-4 py-2 tree-line ml-6 space-y-1">
+                                                {% for sub in tarefa.subtarefas %}
+                                                <div class="flex items-center justify-between bg-gray-50 border border-gray-200 rounded px-3 py-1.5">
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="tipo-badge tipo-subtask">Subtarefa</span>
+                                                        <span class="text-sm text-slate-700">{{ sub.titulo }}</span>
+                                                    </div>
+                                                    <form action="{{ url_for('main.hierarquia_excluir_subtarefa', empresa_id=empresa_id, project_id=project_id, item_id=sub.id) }}" method="POST" onsubmit="return confirm('Excluir subtarefa?');">
+                                                        <button class="text-red-400 hover:text-red-600 text-xs px-1">✕</button>
+                                                    </form>
+                                                </div>
+                                                {% endfor %}
+                                            </div>
+                                            {% endif %}
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-sm text-slate-500 text-center py-8">Nenhum épico neste projeto. Crie um épico acima para montar a hierarquia.</p>
+            {% endif %}
+        </div>
+
+    </div>
+</div>
+{% endblock %}

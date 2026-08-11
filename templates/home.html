@@ -17,8 +17,9 @@
             <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold">P</div>
             <span class="font-bold text-lg">ProjectPro</span>
         </div>
-        <div class="flex items-center gap-3">
+<div class="flex items-center gap-3">
             <span class="text-xs text-slate-400 uppercase font-semibold tracking-wider hidden sm:inline">Dashboard</span>
+            <a href="{{ url_for('main.empresas') }}" class="text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition-colors">Empresas</a>
         </div>
     </header>
 
@@ -31,6 +32,15 @@
             </div>
             
             <div class="flex flex-wrap items-center gap-3">
+                <form action="{{ url_for('main.home') }}" method="GET" class="flex items-center gap-2">
+                    <label for="empresa-ativa" class="text-xs font-medium text-slate-500">Empresa:</label>
+                    <select name="empresa" id="empresa-ativa" onchange="this.form.submit()" class="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200">
+                        <option value="">Todas as empresas</option>
+                        {% for e in empresas %}
+                        <option value="{{ e.id }}" {% if empresa_ativa == e.id %}selected{% endif %}>{{ e.nome }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
                 <a href="{{ url_for('main.gerenciar_configuracoes') }}" class="bg-white hover:bg-gray-50 text-slate-700 border border-gray-300 px-4 py-2.5 rounded-lg font-medium shadow-sm transition-all flex items-center gap-2 hover:border-slate-400 whitespace-nowrap">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-500"><path d="M12.22 2h-4.44a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.38M18 14v-4h-4M14 2l7 7h-7V2z"/></svg>
                     Configurações
@@ -108,6 +118,7 @@
 
 <dialog id="modal-novo" class="modal-config" aria-label="Criar Novo Projeto">
         <form action="{{ url_for('main.criar_projeto') }}" method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="empresa_id" value="{{ empresa_ativa }}">
             <div class="modal-header">
                 <h3 id="modal-novo-titulo">Novo Projeto</h3>
                 <button type="button" onclick="fecharModal('modal-novo')" class="modal-close" aria-label="Fechar">&times;</button>

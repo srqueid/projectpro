@@ -205,6 +205,33 @@ function toggleChildrenVisibility(parentTr) {
 }
 
 /**
+ * Nível de hierarquia de cada tipo de item.
+ * Regras: Épico (1) → Feature (2) → História (3) → Tarefa (4) → Subtarefa (5)
+ */
+const TIPO_NIVEL = {
+    epic: 1,
+    feature: 2,
+    story: 3,
+    task: 4,
+    subtask: 5
+};
+
+/**
+ * Valida se o tipo do pai pode ter o tipo do filho como descendente.
+ * A hierarquia é restrita ao canal: Épico → Feature → História → Tarefa → Subtarefa.
+ * Um tipo só pode ser filho do tipo imediatamente superior.
+ */
+function validarRelacaoPaiFilho(parentTipo, childTipo) {
+    const pNivel = TIPO_NIVEL[parentTipo];
+    const cNivel = TIPO_NIVEL[childTipo];
+    if (pNivel === undefined || cNivel === undefined) return false;
+    // Épico (nível 1) não pode ser filho de ninguém
+    if (cNivel === 1) return false;
+    // Pai deve ser exatamente um nível acima do filho
+    return cNivel === pNivel + 1;
+}
+
+/**
  * Set the current row as child of the row above it.
  * If already a child, remove the parent-child relationship.
  */
@@ -230,6 +257,24 @@ function setAsChildOfAbove(tr) {
 
     const prevId = prevTr.dataset.id;
     if (!prevId) return;
+
+    // Épico não pode ser filho de nenhum item
+    const tipoAtual = tr.dataset.tipo || 'task';
+    if (tipoAtual === 'epic') {
+        alert('Um Épico não pode ser filho de nenhum item.');
+        return;
+    }
+
+    // Valida a hierarquia de tipos (pai deve ser imediatamente acima do filho)
+    const tipoPai = prevTr.dataset.tipo || 'task';
+    if (!validarRelacaoPaiFilho(tipoPai, tipoAtual)) {
+        const labels = { epic: 'Épico', feature: 'Feature', story: 'História', task: 'Tarefa', subtask: 'Subtarefa' };
+        alert(
+            `Hierarquia inválida: ${labels[tipoAtual] || tipoAtual} só pode ser filha de um ${labels[TIPO_NIVEL[tipoAtual] - 1] || 'item com nível imediatamente superior'}. ` +
+            `Canal permitido: Épico → Feature → História → Tarefa → Subtarefa.`
+        );
+        return;
+    }
 
     // Prevent circular reference: check if prev row is already a descendant of this row
     if (wouldCreateCycle(tr.dataset.id, prevId)) {
@@ -589,9 +634,11 @@ function createTaskRowHtml(t) {
         <td class="p-0 border-r relative"><div class="progress-bar" style="width: ${t.conclusao || 0}%;"></div><input type="number" name="conclusao" value="${t.conclusao || 0}" class="sheet-input text-center" oninput="handleConclusionChange(this)"></td>
         <td class="p-0 text-center no-print">
             <div class="flex items-center gap-1 px-1">
-                <select name="tipo" class="tipo-select" onchange="onTipoChange(this)" title="Alterar tipo do item">
+<select name="tipo" class="tipo-select" onchange="onTipoChange(this)" title="Alterar tipo do item">
                     ${tipoOptions}
                 </select>
+                <button type="button" onclick="promoverItem(this.closest('tr'))" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-indigo-600 text-sm" title="Promover (subir um nível na hierarquia)">▲</button>
+                <button type="button" onclick="rebaixarItem(this.closest('tr'))" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-amber-600 text-sm" title="Rebaixar (descer um nível na hierarquia)">▼</button>
                 <button onclick="confirmDeleteRow(this.closest('tr'))" class="w-6 h-6 flex items-center justify-center text-gray-300 hover:text-red-500 text-xs">✕</button>
             </div>
             <input type="hidden" name="modulo" value="${t.modulo || ''}">
@@ -606,7 +653,26 @@ function onTipoChange(select) {
     const tr = select.closest('tr');
     const novoValor = select.value;
     tr.dataset.tipo = novoValor;
-    
+
+    // Regra: Épico não pode ser filho de nenhum item
+    if (novoValor === 'epic') {
+        tr.dataset.parentId = '';
+        const hiddenInput = tr.querySelector('[name="parent_id"]');
+        if (hiddenInput) hiddenInput.value = '';
+    } else {
+        // Se mudou o tipo, verifica se o vínculo com o pai atual ainda é válido
+        const parentId = tr.dataset.parentId;
+        if (parentId && parentId.trim()) {
+            const parentTr = tbody.querySelector(`tr[data-id="${parentId}"]`);
+            const parentTipo = parentTr ? (parentTr.dataset.tipo || 'task') : null;
+            if (!parentTipo || !validarRelacaoPaiFilho(parentTipo, novoValor)) {
+                tr.dataset.parentId = '';
+                const hiddenInput = tr.querySelector('[name="parent_id"]');
+                if (hiddenInput) hiddenInput.value = '';
+            }
+        }
+    }
+
     // Atualiza o badge visual
     const badge = tr.querySelector('.tipo-badge-planilha');
     if (badge) {
@@ -622,9 +688,142 @@ function onTipoChange(select) {
         badge.classList.add('tipo-badge-planilha', `tipo-${novoValor}`);
         badge.textContent = tipoLabels[novoValor] || 'Tarefa';
     }
-    
+
+    rebuildHierarchyUI();
     detectarMudanca(true);
 }
+
+// --- MATRIZ DE PROMOÇÃO/REBAIXAMENTO (ALÇADA POR PERFIL) ---
+
+// Labels dos tipos de item em português
+const TIPO_LABELS_CONV = {
+    epic: 'Épico',
+    feature: 'Feature',
+    story: 'História',
+    task: 'Tarefa',
+    subtask: 'Subtarefa'
+};
+
+// Perfil mínimo necessário para aprovar cada transição (cobertura lógica
+// espelhando o backend). Retorna '' se a transição não for mapeada.
+function perfilNecessarioParaTransicao(tipoAtual, novoTipo) {
+    const adj = new Set([tipoAtual, novoTipo]);
+    if (adj.has('epic') && adj.has('feature')) return 'product_manager';
+    if (adj.has('feature') && (adj.has('story') || adj.has('task'))) return 'product_owner';
+    if (adj.size === 2) return 'executor';
+    return '';
+}
+
+function getPerfilDoUsuario() {
+    const select = document.getElementById('usuario-atual');
+    if (!select) return 'executor';
+    const opt = select.options[select.selectedIndex];
+    return opt ? (opt.dataset.perfil || 'executor') : 'executor';
+}
+
+function getResponsavelAtual() {
+    const select = document.getElementById('usuario-atual');
+    return select ? select.value : null;
+}
+
+function salvarUsuarioAtual() {
+    try { localStorage.setItem('planilha_usuario_atual', getUsuarioAtualId()); } catch (e) {}
+}
+
+function getUsuarioAtualId() {
+    const select = document.getElementById('usuario-atual');
+    return select ? select.value : '';
+}
+
+function restaurarUsuarioAtual() {
+    try {
+        const salvo = localStorage.getItem('planilha_usuario_atual');
+        if (salvo) {
+            const select = document.getElementById('usuario-atual');
+            if (select) select.value = salvo;
+        }
+    } catch (e) {}
+}
+
+function obterNovoTipo(tipoAtual, direcao) {
+    const ordem = [{ t: 'epic', n: 1 }, { t: 'feature', n: 2 }, { t: 'story', n: 3 }, { t: 'task', n: 4 }, { t: 'subtask', n: 5 }];
+    const atual = ordem.find(o => o.t === tipoAtual);
+    if (!atual) return null;
+    const novoNivel = direcao === 'promover' ? atual.n - 1 : atual.n + 1;
+    const novo = ordem.find(o => o.n === novoNivel);
+    return novo ? novo.t : null;
+}
+
+async function converterItem(tr, direcao) {
+    const taskId = tr.dataset.id;
+    const tipoAtual = tr.dataset.tipo || 'task';
+    const novoTipo = obterNovoTipo(tipoAtual, direcao);
+    if (!novoTipo) {
+        alert(`Este item já está no extremo da hierarquia e não pode ser ${direcao === 'promover' ? 'promovido' : 'rebaixado'}.`);
+        return;
+    }
+
+    const responsavelId = getResponsavelAtual();
+    if (!responsavelId) {
+        alert('Selecione o usuário que aprova (👤 Aprova) no topo da página antes de promover/rebaixar.');
+        return;
+    }
+
+    const perfilUsuario = getPerfilDoUsuario();
+    const perfilNecessario = perfilNecessarioParaTransicao(tipoAtual, novoTipo);
+    const nomeItem = tr.querySelector('[name="tarefa"]')?.value || `ID ${taskId}`;
+
+    // Modal de confirmação com alçada
+    const tipoLabelAtual = TIPO_LABELS_CONV[tipoAtual] || tipoAtual;
+    const tipoLabelNovo = TIPO_LABELS_CONV[novoTipo] || novoTipo;
+    const acao = direcao === 'promover' ? 'Promover' : 'Rebaixar';
+
+    const ok = confirm(
+        `${acao} "${nomeItem}"?\n\n` +
+        `${tipoLabelAtual}  ${direcao === 'promover' ? '▲' : '▼'}  ${tipoLabelNovo}\n\n` +
+        (perfilNecessario && perfilNecessario !== 'executor'
+            ? `Esta transição requer aprovação de: ${perfilNecessario === 'product_manager' ? 'Gerente de Produto' : 'Dono do Produto (PO)'}.\n`
+            : `Transição operacional (decidida livremente pelo time).\n`) +
+        `\nUsuário atual: ${responsavelId ? 'selecionado' : 'nenhum'}`
+    );
+    if (!ok) return;
+
+    try {
+        const response = await fetch(`/projeto/${projectId}/converter_tipo`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task_id: taskId, direcao: direcao, responsavel_id: responsavelId })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (response.ok && data.status === 'sucesso') {
+            // Atualiza o dataset e o badge
+            tr.dataset.tipo = novoTipo;
+            const select = tr.querySelector('[name="tipo"]');
+            if (select) select.value = novoTipo;
+            const badge = tr.querySelector('.tipo-badge-planilha');
+            if (badge) {
+                badge.className = badge.className.replace(/tipo-\w+/g, '');
+                badge.classList.add('tipo-badge-planilha', `tipo-${novoTipo}`);
+                badge.textContent = TIPO_LABELS_CONV[novoTipo] || 'Tarefa';
+            }
+            rebuildHierarchyUI();
+            alert(`${acao} realizado: ${tipoLabelAtual} → ${tipoLabelNovo}.`);
+        } else {
+            alert(data.mensagem || 'Falha ao converter o item.');
+        }
+    } catch (e) {
+        console.error('Erro:', e);
+        alert('Erro de conexão ao converter o item.');
+    }
+}
+
+function promoverItem(tr) { converterItem(tr, 'promover'); }
+function rebaixarItem(tr) { converterItem(tr, 'rebaixar'); }
+
+// Restaura o usuário salvo ao carregar a página
+document.addEventListener('DOMContentLoaded', () => {
+    restaurarUsuarioAtual();
+});
 
 // --- RECÁLCULO E ORDENAÇÃO ---
 async function autoRecalcular() {

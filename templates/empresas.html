@@ -1,0 +1,218 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<style>
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .tab-btn.active { background-color: #1e40af; color: white; }
+    .tab-nav { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; }
+    .tab-nav button { white-space: nowrap; flex-shrink: 0; }
+    .tipo-badge { font-size: 0.65rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 999px; text-transform: uppercase; }
+</style>
+{% endblock %}
+
+{% block content %}
+<header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0 shadow-sm z-10">
+    <div>
+        <h1 class="text-lg font-bold text-slate-800">🏢 Empresas & Perfis</h1>
+        <p class="text-xs text-slate-500">Gestão de tenants e perfis de acesso — cada empresa isola seus projetos, times e responsáveis.</p>
+    </div>
+</header>
+
+<div class="flex-1 overflow-auto p-6">
+    <div class="max-w-6xl mx-auto">
+
+        <!-- Abas de Navegação -->
+        <div class="mb-6 border-b border-gray-200 bg-gray-50 rounded-t-xl">
+            <nav class="tab-nav flex gap-4 px-4 sm:px-6 -mb-px">
+                <button onclick="switchTab('empresas')" class="tab-btn py-3 px-4 border-b-2 border-blue-600 text-sm font-medium text-blue-600">🏢 Empresas</button>
+                <button onclick="switchTab('perfis')" class="tab-btn py-3 px-4 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700">👤 Perfis</button>
+            </nav>
+        </div>
+
+        <!-- Aba: Empresas -->
+        <div id="tab-empresas" class="tab-content active space-y-6">
+            <!-- Formulário de Nova Empresa -->
+            <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 id="empresa-form-title" class="text-lg font-bold text-slate-800">+ Nova Empresa</h2>
+                    <button type="button" onclick="resetEmpresaForm()" id="btn-cancel-empresa" class="btn-secondary hidden">Cancelar</button>
+                </div>
+                <form id="form-empresa" action="{{ url_for('main.adicionar_empresa') }}" method="POST" class="flex flex-wrap gap-3 items-end">
+                    <input type="hidden" name="empresa_id" id="empresa-id">
+                    <div class="flex-1 min-w-[200px]">
+                        <label class="block text-sm font-medium text-slate-700">Nome</label>
+                        <input type="text" name="nome" id="empresa-nome" required class="mt-1 w-full input-field" placeholder="Ex: Empresa ACME Ltda">
+                    </div>
+                    <div class="flex-1 min-w-[200px]">
+                        <label class="block text-sm font-medium text-slate-700">CNPJ</label>
+                        <input type="text" name="cnpj" id="empresa-cnpj" class="mt-1 w-full input-field" placeholder="Opcional">
+                    </div>
+                    <label class="flex items-center gap-2 pb-2">
+                        <input type="checkbox" name="ativo" id="empresa-ativo" class="h-4 w-4 rounded text-blue-600 focus:ring-blue-500" checked>
+                        <span class="text-sm font-medium text-slate-700">Ativa</span>
+                    </label>
+                    <button type="submit" id="btn-submit-empresa" class="btn-primary">Criar Empresa</button>
+                </form>
+            </div>
+
+            <!-- Lista de Empresas -->
+            <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-bold text-slate-800">Empresas Cadastradas ({{ empresas|length }})</h2>
+                </div>
+                {% if empresas %}
+                <div class="space-y-3">
+                    {% for e in empresas %}
+                    <div class="flex flex-wrap items-center justify-between gap-3 p-4 rounded-lg border border-gray-200 bg-gray-50 hover:border-blue-300 transition-all">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="font-bold text-slate-800">{{ e.nome }}</span>
+                                {% if e.cnpj %}<span class="text-xs text-slate-500 font-mono">{{ e.cnpj }}</span>{% endif %}
+                                {% if e.ativo %}
+                                    <span class="tipo-badge bg-emerald-100 text-emerald-700">ATIVO</span>
+                                {% else %}
+                                    <span class="tipo-badge bg-gray-200 text-gray-600">INATIVO</span>
+                                {% endif %}
+                            </div>
+                            <p class="text-xs text-slate-400 mt-1">ID: {{ e.id }}</p>
+                        </div>
+                        <div class="flex items-center gap-2 text-sm">
+                            <button onclick='editEmpresa({{ e|tojson }})' class="text-blue-600 hover:text-blue-800 text-xs font-medium px-2 py-1 hover:bg-blue-50 rounded">Editar</button>
+                            <form action="{{ url_for('main.excluir_empresa', empresa_id=e.id) }}" method="POST" onsubmit="return confirm('Excluir esta empresa? Todos os dados vinculados serão removidos.');">
+                                <button type="submit" class="text-red-500 hover:text-red-700 text-xs font-medium px-2 py-1 hover:bg-red-50 rounded">Excluir</button>
+                            </form>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-sm text-slate-500 text-center py-8">Nenhuma empresa cadastrada. Crie uma empresa para começar a isolar seus projetos.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Aba: Perfis -->
+        <div id="tab-perfis" class="tab-content space-y-6">
+            <!-- Formulário de Novo Perfil -->
+            <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 id="perfil-form-title" class="text-lg font-bold text-slate-800">+ Novo Perfil</h2>
+                    <button type="button" onclick="resetPerfilForm()" id="btn-cancel-perfil" class="btn-secondary hidden">Cancelar</button>
+                </div>
+                <form id="form-perfil" action="{{ url_for('main.adicionar_perfil') }}" method="POST" class="space-y-4">
+                    <input type="hidden" name="perfil_id" id="perfil-id">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700">ID (identificador)</label>
+                            <input type="text" name="id" id="perfil-id-input" required class="mt-1 w-full input-field" placeholder="Ex: analista_negocios">
+                            <p class="text-xs text-slate-500 mt-1">Usado internamente. Sem espaços; letras minúsculas e underscores.</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700">Nome</label>
+                            <input type="text" name="nome" id="perfil-nome" required class="mt-1 w-full input-field" placeholder="Ex: Analista de Negócios">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700">Descrição</label>
+                        <textarea name="descricao" id="perfil-descricao" rows="2" class="mt-1 w-full input-field" placeholder="Descreva as responsabilidades e alçadas deste perfil."></textarea>
+                    </div>
+                    <div class="flex gap-2">
+                        <button type="submit" id="btn-submit-perfil" class="btn-primary">Criar Perfil</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Lista de Perfis -->
+            <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-bold text-slate-800">Perfis Cadastrados ({{ perfis|length }})</h2>
+                </div>
+                {% if perfis %}
+                <div class="space-y-3">
+                    {% for p in perfis %}
+                    <div class="flex flex-wrap items-center justify-between gap-3 p-4 rounded-lg border border-gray-200 bg-gray-50 hover:border-blue-300 transition-all">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="font-bold text-slate-800">{{ p.nome }}</span>
+                                <span class="tipo-badge bg-blue-100 text-blue-700 font-mono">{{ p.id }}</span>
+                            </div>
+                            {% if p.descricao %}<p class="text-xs text-slate-500 mt-1">{{ p.descricao }}</p>{% endif %}
+                        </div>
+                        <div class="flex items-center gap-2 text-sm">
+                            <button onclick='editPerfil({{ p|tojson }})' class="text-blue-600 hover:text-blue-800 text-xs font-medium px-2 py-1 hover:bg-blue-50 rounded">Editar</button>
+                            <form action="{{ url_for('main.excluir_perfil', perfil_id=p.id) }}" method="POST" onsubmit="return confirm('Excluir este perfil? Responsáveis com este perfil voltarão ao padrão executor.');">
+                                <button type="submit" class="text-red-500 hover:text-red-700 text-xs font-medium px-2 py-1 hover:bg-red-50 rounded">Excluir</button>
+                            </form>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-sm text-slate-500 text-center py-8">Nenhum perfil cadastrado.</p>
+                {% endif %}
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    function switchTab(tabName) {
+        document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+        document.getElementById(`tab-${tabName}`).classList.add('active');
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.remove('active', 'border-blue-600', 'text-blue-600');
+            btn.classList.add('border-transparent', 'text-slate-500');
+        });
+        const activeBtn = document.querySelector(`button[onclick="switchTab('${tabName}')"]`);
+        activeBtn.classList.add('active', 'border-blue-600', 'text-blue-600');
+        activeBtn.classList.remove('border-transparent', 'text-slate-500');
+    }
+
+    // ===== Empresas =====
+    function editEmpresa(e) {
+        document.getElementById('empresa-form-title').innerText = 'Editar Empresa';
+        document.getElementById('empresa-id').value = e.id;
+        document.getElementById('empresa-nome').value = e.nome;
+        document.getElementById('empresa-cnpj').value = e.cnpj || '';
+        document.getElementById('empresa-ativo').checked = !!e.ativo;
+        document.getElementById('form-empresa').action = `/empresas/editar/${e.id}`;
+        document.getElementById('btn-submit-empresa').innerText = 'Salvar Alterações';
+        document.getElementById('btn-cancel-empresa').classList.remove('hidden');
+    }
+
+    function resetEmpresaForm() {
+        document.getElementById('empresa-form-title').innerText = '+ Nova Empresa';
+        document.getElementById('form-empresa').reset();
+        document.getElementById('empresa-id').value = '';
+        document.getElementById('empresa-ativo').checked = true;
+        document.getElementById('form-empresa').action = "{{ url_for('main.adicionar_empresa') }}";
+        document.getElementById('btn-submit-empresa').innerText = 'Criar Empresa';
+        document.getElementById('btn-cancel-empresa').classList.add('hidden');
+    }
+
+    // ===== Perfis =====
+    function editPerfil(p) {
+        document.getElementById('perfil-form-title').innerText = 'Editar Perfil';
+        document.getElementById('perfil-id').value = p.id;
+        document.getElementById('perfil-id-input').value = p.id;
+        document.getElementById('perfil-id-input').disabled = true; // não permite alterar o ID (chave primária)
+        document.getElementById('perfil-nome').value = p.nome;
+        document.getElementById('perfil-descricao').value = p.descricao || '';
+        document.getElementById('form-perfil').action = `/perfis/editar/${p.id}`;
+        document.getElementById('btn-submit-perfil').innerText = 'Salvar Alterações';
+        document.getElementById('btn-cancel-perfil').classList.remove('hidden');
+    }
+
+    function resetPerfilForm() {
+        document.getElementById('perfil-form-title').innerText = '+ Novo Perfil';
+        document.getElementById('form-perfil').reset();
+        document.getElementById('perfil-id').value = '';
+        document.getElementById('perfil-id-input').disabled = false;
+        document.getElementById('form-perfil').action = "{{ url_for('main.adicionar_perfil') }}";
+        document.getElementById('btn-submit-perfil').innerText = 'Criar Perfil';
+        document.getElementById('btn-cancel-perfil').classList.add('hidden');
+    }
+</script>
+{% endblock %}

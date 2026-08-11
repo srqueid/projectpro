@@ -28,9 +28,13 @@
         </div>
 
         <nav class="flex-1 p-3 space-y-2 mt-2 overflow-y-auto overflow-x-hidden">
-            <a href="{{ url_for('main.home') }}" class="flex items-center gap-3 px-3 py-3 text-sm font-medium rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-all" title="Todos Projetos">
+<a href="{{ url_for('main.home') }}" class="flex items-center gap-3 px-3 py-3 text-sm font-medium rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-all" title="Todos Projetos">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="min-w-[20px]"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
                 <span class="fade-text">Todos Projetos</span>
+            </a>
+            <a href="{{ url_for('main.empresas') }}" class="flex items-center gap-3 px-3 py-3 text-sm font-medium rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-all {{ 'bg-slate-800 text-white' if page == 'empresas' }}" title="Empresas (Tenants)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="min-w-[20px]"><path d="M3 21h18"/><path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"/><path d="M9 7h1"/><path d="M14 7h1"/><path d="M9 11h1"/><path d="M14 11h1"/><path d="M9 15h1"/><path d="M14 15h1"/></svg>
+                <span class="fade-text">Empresas</span>
             </a>
 
             {% if project_id %}

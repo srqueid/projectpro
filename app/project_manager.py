@@ -9,6 +9,69 @@ from . import config, utils, database
 # =============================================================================
 # GERENCIAMENTO DE RESPONSÁVEIS (COM BANCO DE DADOS)
 # =============================================================================
+
+# Perfis e seus níveis de alçada para a matriz de promoção/rebaixamento
+PERFIS_NIVEL_ALCADA = {
+    'executor': 0,         # Decide livremente em Subtarefa ↔ Tarefa
+    'scrum_master': 1,     # Gestão do fluxo
+    'product_owner': 2,    # Aprova Tarefa/História ↔ Feature
+    'product_manager': 3   # Aprova Feature ↔ Épico
+}
+
+# Labels dos perfis em português
+PERFIS_LABELS = {
+    'product_manager': 'Gerente de Produto',
+    'scrum_master': 'Gestor do Projeto (Scrum Master)',
+    'product_owner': 'Dono do Produto (PO)',
+    'executor': 'Executor'
+}
+
+def carregar_perfis():
+    """Carrega a lista de perfis cadastrados."""
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM rh.perfis ORDER BY id")
+        return [dict(row) for row in cur.fetchall()]
+
+
+def adicionar_perfil(dados):
+    """Cria um novo perfil (papel de acesso/alçada)."""
+    perfil_id = (dados.get('id') or '').strip().lower().replace(' ', '_')
+    if not perfil_id:
+        raise ValueError("O ID do perfil é obrigatório.")
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO rh.perfis (id, nome, descricao) VALUES (%s, %s, %s)",
+            (perfil_id, dados['nome'], dados.get('descricao') or None)
+        )
+    db.commit()
+
+
+def editar_perfil(perfil_id, dados):
+    """Atualiza o nome e a descrição de um perfil."""
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE rh.perfis SET nome = %s, descricao = %s WHERE id = %s",
+            (dados['nome'], dados.get('descricao') or None, perfil_id)
+        )
+    db.commit()
+
+
+def excluir_perfil(perfil_id):
+    """Exclui um perfil. Se houver responsáveis usando esse perfil, o perfil
+    deles volta para o padrão 'executor' antes da exclusão."""
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE rh.responsaveis SET perfil = 'executor' WHERE perfil = %s",
+            (perfil_id,)
+        )
+        cur.execute("DELETE FROM rh.perfis WHERE id = %s", (perfil_id,))
+    db.commit()
+
+
 def carregar_responsaveis():
     db = database.get_db()
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
@@ -22,10 +85,11 @@ def carregar_responsaveis():
 def adicionar_responsavel(dados):
     db = database.get_db()
     horas_semanais = dados.get('horas_semanais') or None
+    perfil = dados.get('perfil') or 'executor'
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO rh.responsaveis (nome, email, modelo_trabalho, horas_semanais) VALUES (%s, %s, %s, %s) RETURNING id",
-            (dados['nome'], dados['email'], dados['modelo_trabalho'], horas_semanais)
+            "INSERT INTO rh.responsaveis (nome, email, modelo_trabalho, horas_semanais, perfil) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+            (dados['nome'], dados['email'], dados['modelo_trabalho'], horas_semanais, perfil)
         )
         responsavel_id = cur.fetchone()[0]
         for periodo in dados.get('ferias', []):
@@ -35,10 +99,11 @@ def adicionar_responsavel(dados):
 def editar_responsavel(id, dados):
     db = database.get_db()
     horas_semanais = dados.get('horas_semanais') or None
+    perfil = dados.get('perfil') or 'executor'
     with db.cursor() as cur:
         cur.execute(
-            "UPDATE rh.responsaveis SET nome = %s, email = %s, modelo_trabalho = %s, horas_semanais = %s WHERE id = %s",
-            (dados['nome'], dados['email'], dados['modelo_trabalho'], horas_semanais, id)
+            "UPDATE rh.responsaveis SET nome = %s, email = %s, modelo_trabalho = %s, horas_semanais = %s, perfil = %s WHERE id = %s",
+            (dados['nome'], dados['email'], dados['modelo_trabalho'], horas_semanais, perfil, id)
         )
         cur.execute("DELETE FROM rh.ferias WHERE responsavel_id = %s", (id,))
         for periodo in dados.get('ferias', []):
@@ -146,7 +211,201 @@ def _validar_circular_reference(tarefas):
     return True
 
 
+# Nível de hierarquia de cada tipo de item.
+# Regras: Épico (1) → Feature (2) → História (3) → Tarefa (4) → Subtarefa (5)
+TIPO_NIVEL = {
+    'epic': 1,
+    'feature': 2,
+    'story': 3,
+    'task': 4,
+    'subtask': 5
+}
+
+
+def _validar_hierarquia_tipos(tarefas):
+    """
+    Valida a hierarquia pai-filho conforme as regras de tipo:
+    - Épico não pode ser filho de nenhum item.
+    - Feature só pode ser filha de Épico.
+    - História só pode ser filha de Feature.
+    - Tarefa só pode ser filha de História.
+    - Subtarefa só pode ser filha de Tarefa.
+    Levanta ValueError se encontrar vínculo inválido.
+    """
+    mapa = {str(t.get('id')): t for t in tarefas}
+    for t in tarefas:
+        pid = t.get('parent_id')
+        if pid is None or str(pid).strip() == '':
+            continue
+        pid_str = str(pid).strip()
+        child_id = str(t.get('id'))
+        child_tipo = t.get('tipo') or 'task'
+
+        # Épico não pode ser filho de ninguém
+        if child_tipo == 'epic':
+            nome = t.get('tarefa') or t.get('subtarefa') or f"ID {t.get('id')}"
+            raise ValueError(f"Um Épico ('{nome}') não pode ser filho de nenhum item.")
+
+        parent = mapa.get(pid_str)
+        if not parent:
+            continue
+        parent_tipo = parent.get('tipo') or 'task'
+
+        c_nivel = TIPO_NIVEL.get(child_tipo)
+        p_nivel = TIPO_NIVEL.get(parent_tipo)
+        if c_nivel is None or p_nivel is None or c_nivel != p_nivel + 1:
+            nome = t.get('tarefa') or t.get('subtarefa') or f"ID {t.get('id')}"
+            nome_pai = parent.get('tarefa') or parent.get('subtarefa') or f"ID {parent.get('id')}"
+            raise ValueError(
+                f"Hierarquia inválida: '{nome}' (ID {t.get('id')}) não pode ser filha de '{nome_pai}' (ID {parent.get('id')}). "
+                f"Canal permitido: Épico → Feature → História → Tarefa → Subtarefa."
+            )
+    return True
+
+
+# Labels dos tipos de item em português
+TIPO_LABELS = {
+    'epic': 'Épico',
+    'feature': 'Feature',
+    'story': 'História',
+    'task': 'Tarefa',
+    'subtask': 'Subtarefa'
+}
+
+
+def _perfil_de_aprovacao(tipo_atual, novo_tipo):
+    """
+    Retorna o perfil mínimo necessário para aprovar a conversão de um item
+    entre dois tipos adjacentes, conforme a matriz de alçada:
+      - Envolvendo Épico (feature ↔ epic) -> product_manager
+      - Envolvendo Feature (task/story ↔ feature) -> product_owner
+      - Transições operacionais (subtask ↔ task e story ↔ task) -> executor (livre)
+    Retorna '' se a transição não estiver mapeada.
+    """
+    adjacente = {tipo_atual, novo_tipo}
+    if 'epic' in adjacente and 'feature' in adjacente:
+        return 'product_manager'
+    if 'feature' in adjacente and ('story' in adjacente or 'task' in adjacente):
+        return 'product_owner'
+    # Transições entre níveis operacionais (task↔subtask e story↔task):
+    # decididas livremente pelo time de desenvolvimento/engenharia.
+    if len(adjacente) == 2:
+        return 'executor'
+    return ''
+
+
+def _tem_permissao_aprovacao(perfil_do_usuario, perfil_necessario):
+    """
+    Verifica se o perfil do usuário tem alçada suficiente para aprovar
+    a transição (mesmo nível ou superior).
+    """
+    if not perfil_necessario:
+        return False
+    return PERFIS_NIVEL_ALCADA.get(perfil_do_usuario, 0) >= PERFIS_NIVEL_ALCADA.get(perfil_necessario, 0)
+
+
+def _converter_um_nivel(tarefa, direcao):
+    """
+    Retorna o novo tipo ao subir (promover) ou descer (rebaixar) um nível
+    na hierarquia. Retorna None se já estiver no extremo.
+
+    Hierarquia: Épico(1) → Feature(2) → História(3) → Tarefa(4) → Subtarefa(5).
+    Promover sobe em direção ao Épico (nível diminui); rebaixar desce (nível aumenta).
+    """
+    nivel_atual = TIPO_NIVEL.get(tarefa.get('tipo') or 'task')
+    if not nivel_atual:
+        return None
+    if direcao == 'promover':
+        novo_nivel = nivel_atual - 1  # Sobe na hierarquia (ex.: subtask->task, task->story)
+    else:
+        novo_nivel = nivel_atual + 1  # Desce na hierarquia (ex.: story->task, task->subtask)
+    novo_tipo = next((k for k, v in TIPO_NIVEL.items() if v == novo_nivel), None)
+    return novo_tipo
+
+
+def converter_tipo_tarefa(project_id, task_id, direcao, responsavel_id=None):
+    """
+    Converte (promove ou rebaixa) um item em um nível na hierarquia:
+    Épico → Feature → História → Tarefa → Subtarefa.
+
+    Realiza:
+      1. Carrega a tarefa e valida a transição possível.
+      2. Valida a alçada (perfil) de quem solicita a conversão.
+      3. Ajusta vínculos pai/filho que ficariam inválidos (reaproveita
+         o pai se continuar válido; senão desvincula).
+      4. Atualiza o tipo e registra log de atividade.
+
+    Retorna um dicionário com status e detalhes para a UI.
+    """
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM projeto.tarefas WHERE projeto_id = %s AND id = %s", (project_id, task_id))
+        tarefa = cur.fetchone()
+        if not tarefa:
+            raise ValueError(f"Tarefa ID {task_id} não encontrada no projeto.")
+
+        tarefa = dict(tarefa)
+        tipo_atual = tarefa.get('tipo') or 'task'
+        novo_tipo = _converter_um_nivel(tarefa, direcao)
+        if not novo_tipo:
+            raise ValueError(f"A tarefa já está no extremo da hierarquia e não pode ser {'promovida' if direcao == 'promover' else 'rebaixada'}.")
+
+        # --- Validação de alçada (perfil) ---
+        perfil_necessario = _perfil_de_aprovacao(tipo_atual, novo_tipo)
+        perfil_usuario = 'executor'
+        if responsavel_id:
+            cur.execute("SELECT perfil FROM rh.responsaveis WHERE id = %s", (responsavel_id,))
+            row = cur.fetchone()
+            if row:
+                perfil_usuario = row['perfil'] or 'executor'
+        if not _tem_permissao_aprovacao(perfil_usuario, perfil_necessario):
+            raise PermissionError(
+                f"Alçada insuficiente. A transição {TIPO_LABELS.get(tipo_atual)} → {TIPO_LABELS.get(novo_tipo)} "
+                f"requer aprovação de: {PERFIS_LABELS.get(perfil_necessario, perfil_necessario)}."
+            )
+
+        # --- Ajuste de vínculo com o PAI ---
+        parent_id = tarefa.get('parent_id')
+        if parent_id:
+            cur.execute("SELECT tipo FROM projeto.tarefas WHERE projeto_id = %s AND id = %s", (project_id, parent_id))
+            parent_row = cur.fetchone()
+            parent_tipo = (parent_row['tipo'] if parent_row else 'task') or 'task'
+            # Se o novo tipo não puder ser filho do tipo atual do pai, desvincula
+            if TIPO_NIVEL.get(novo_tipo) != TIPO_NIVEL.get(parent_tipo) + 1:
+                cur.execute("UPDATE projeto.tarefas SET parent_id = NULL WHERE projeto_id = %s AND id = %s", (project_id, task_id))
+
+        # --- Ajuste dos FILHOS ---
+        # Filhos que não puderem ser filhos do novo tipo são desvinculados
+        cur.execute("SELECT * FROM projeto.tarefas WHERE projeto_id = %s AND parent_id = %s", (project_id, task_id))
+        filhos = [dict(r) for r in cur.fetchall()]
+        for filho in filhos:
+            filho_tipo = filho.get('tipo') or 'task'
+            if TIPO_NIVEL.get(filho_tipo) != TIPO_NIVEL.get(novo_tipo) + 1:
+                cur.execute("UPDATE projeto.tarefas SET parent_id = NULL WHERE projeto_id = %s AND id = %s", (project_id, filho['id']))
+
+        # --- Atualiza o tipo ---
+        cur.execute("UPDATE projeto.tarefas SET tipo = %s WHERE projeto_id = %s AND id = %s", (novo_tipo, project_id, task_id))
+
+        # --- Log de atividade ---
+        log_detalhe = (
+            f"Item '{tarefa.get('tarefa') or tarefa.get('subtarefa') or f'ID {task_id}'}' "
+            f"{'promovido' if direcao == 'promover' else 'rebaixado'}: "
+            f"{TIPO_LABELS.get(tipo_atual)} → {TIPO_LABELS.get(novo_tipo)}."
+        )
+        adicionar_log_atividade(cur, tarefa['pk_id'], responsavel_id, log_detalhe)
+
+    db.commit()
+    return {
+        'status': 'sucesso',
+        'tarefa_id': task_id,
+        'tipo_anterior': tipo_atual,
+        'tipo_novo': novo_tipo
+    }
+
+
 def salvar_tarefas(project_id, tarefas):
+    # Valida a hierarquia de tipos (Épico → Feature → História → Tarefa → Subtarefa)
+    _validar_hierarquia_tipos(tarefas)
     db = database.get_db()
     with db.cursor() as cur:
         cur.execute("DELETE FROM projeto.tarefas WHERE projeto_id = %s", (project_id,))
@@ -605,5 +864,339 @@ def excluir_time(id):
     db = database.get_db()
     with db.cursor() as cur:
         cur.execute("DELETE FROM rh.times WHERE id = %s", (id,))
+    db.commit()
+
+# =============================================================================
+# EMPRESAS (TENANT) - SCHEMA core
+# =============================================================================
+def carregar_empresas():
+    """Lista todas as empresas (tenants) cadastradas."""
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM core.empresas ORDER BY nome")
+        return [dict(row) for row in cur.fetchall()]
+
+def obter_empresa_por_id(empresa_id):
+    """Retorna uma empresa pelo seu ID, ou None se não existir."""
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM core.empresas WHERE id = %s", (empresa_id,))
+        return dict(cur.fetchone()) if cur.rowcount > 0 else None
+
+def adicionar_empresa(dados):
+    """Cria uma nova empresa (tenant)."""
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO core.empresas (nome, cnpj, ativo) VALUES (%s, %s, %s) RETURNING id",
+            (dados['nome'], dados.get('cnpj') or None, dados.get('ativo', True))
+        )
+        novo_id = cur.fetchone()[0]
+    db.commit()
+    return novo_id
+
+def editar_empresa(empresa_id, dados):
+    """Atualiza os dados de uma empresa."""
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE core.empresas SET nome = %s, cnpj = %s, ativo = %s WHERE id = %s",
+            (dados['nome'], dados.get('cnpj') or None, dados.get('ativo', True), empresa_id)
+        )
+    db.commit()
+
+def excluir_empresa(empresa_id):
+    """Exclui uma empresa e todos os dados vinculados (ON DELETE CASCADE)."""
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM core.empresas WHERE id = %s", (empresa_id,))
+    db.commit()
+
+def carregar_projetos_por_empresa(empresa_id):
+    """Lista os projetos de uma empresa específica (isolamento por tenant)."""
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT id, nome, descricao FROM projeto.projetos WHERE empresa_id = %s ORDER BY nome", (empresa_id,))
+        return [dict(row) for row in cur.fetchall()]
+
+def criar_projeto_empresa(empresa_id, project_id, nome, descricao=''):
+    """Cria um projeto vinculado a uma empresa."""
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO projeto.projetos (id, nome, descricao, empresa_id) VALUES (%s, %s, %s, %s) ON CONFLICT (id) DO NOTHING",
+            (project_id, nome, descricao, empresa_id)
+        )
+    db.commit()
+
+# =============================================================================
+# HIERARQUIA EM 5 TABELAS (Épico → Feature → História → Tarefa → Subtarefa)
+# =============================================================================
+def carregar_hierarquia_completa(empresa_id, projeto_id):
+    """
+    Carrega a hierarquia completa de um projeto em estrutura aninhada:
+    Épicos → Features → Histórias → Tarefas → Subtarefas, respeitando o tenant.
+    Retorna uma lista de épicos com seus descendentes.
+    """
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("""
+            SELECT e.id AS epico_id, e.titulo AS epico_titulo, e.descricao AS epico_descricao,
+                   e.status AS epico_status, e.projeto_id,
+                   f.id AS feature_id, f.titulo AS feature_titulo, f.status AS feature_status,
+                   h.id AS historia_id, h.titulo AS historia_titulo, h.pontos, h.status AS historia_status,
+                   t.id AS tarefa_id, t.titulo AS tarefa_titulo, t.is_extraordinaria, t.status AS tarefa_status,
+                   t.conclusao, t.responsavel_id, t.sprint, t.planejado,
+                   s.id AS subtarefa_id, s.titulo AS subtarefa_titulo, s.concluida
+            FROM projeto.epicos e
+            LEFT JOIN projeto.features f ON f.epico_id = e.id
+            LEFT JOIN projeto.historias h ON h.feature_id = f.id
+            LEFT JOIN projeto.tarefas_hierarquicas t ON t.historia_id = h.id
+            LEFT JOIN projeto.subtarefas s ON s.tarefa_id = t.id
+            WHERE e.empresa_id = %s AND e.projeto_id = %s
+            ORDER BY e.titulo, f.titulo, h.titulo, t.titulo, s.titulo
+        """, (empresa_id, projeto_id))
+        rows = cur.fetchall()
+
+    # Monta a árvore
+    epicos_map = {}
+    for r in rows:
+        epico_id = r['epico_id']
+        if epico_id not in epicos_map:
+            epicos_map[epico_id] = {
+                'id': epico_id, 'titulo': r['epico_titulo'], 'descricao': r['epico_descricao'],
+                'status': r['epico_status'], 'projeto_id': r['projeto_id'], 'features': []
+            }
+        epico = epicos_map[epico_id]
+        if r['feature_id']:
+            feat = next((x for x in epico['features'] if x['id'] == r['feature_id']), None)
+            if not feat:
+                feat = {'id': r['feature_id'], 'titulo': r['feature_titulo'], 'status': r['feature_status'], 'historias': []}
+                epico['features'].append(feat)
+            if r['historia_id']:
+                hist = next((x for x in feat['historias'] if x['id'] == r['historia_id']), None)
+                if not hist:
+                    hist = {'id': r['historia_id'], 'titulo': r['historia_titulo'], 'pontos': r['pontos'],
+                            'status': r['historia_status'], 'tarefas': []}
+                    feat['historias'].append(hist)
+                if r['tarefa_id']:
+                    tarefa = next((x for x in hist['tarefas'] if x['id'] == r['tarefa_id']), None)
+                    if not tarefa:
+                        tarefa = {'id': r['tarefa_id'], 'titulo': r['tarefa_titulo'], 'is_extraordinaria': r['is_extraordinaria'],
+                                  'status': r['tarefa_status'], 'conclusao': r['conclusao'], 'responsavel_id': r['responsavel_id'],
+                                  'sprint': r['sprint'], 'planejado': r['planejado'], 'subtarefas': []}
+                        hist['tarefas'].append(tarefa)
+                    if r['subtarefa_id']:
+                        tarefa['subtarefas'].append({'id': r['subtarefa_id'], 'titulo': r['subtarefa_titulo'], 'concluida': r['concluida']})
+
+    return list(epicos_map.values())
+
+
+def carregar_tarefas_hierarquicas_plano(empresa_id, projeto_id):
+    """
+    Retorna uma lista PLANIFICADA (flat) de todas as tarefas de um projeto na
+    nova hierarquia (5 tabelas), enriquecida com o contexto pai (épico, feature,
+    história) e os blocos de sub-tarefas. Cada registro de 'tarefa' contém ainda
+    os campos operacionais (datas, kanban, conclusão, responsável, etc.) usados
+    pelas visualizações Kanban, Planilha e Cronograma.
+
+    Estrutura de cada item retornado:
+      {
+        'id': tarefa.id (display), 'pk_id': None,
+        'tipo': 'task', 'is_extraordinaria': bool,
+        'titulo': tarefa.titulo, 'tarefa': titulo, 'subtarefa': None,
+        'fase': None, 'modulo': None, 'descricao': ...,
+        'dias', 'conclusao', 'responsavel_id', 'responsavel_nome',
+        'baseline_inicio', 'baseline_fim', 'inicio', 'fim',
+        'kanban_coluna_id', 'sprint', 'planejado', 'predecessora_id',
+        'epico_id', 'epico_titulo', 'feature_id', 'feature_titulo',
+        'historia_id', 'historia_titulo',
+        'subtarefas': [ {'id','titulo','concluida'}, ... ]
+      }
+    """
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("""
+            SELECT e.id AS epico_id, e.titulo AS epico_titulo,
+                   f.id AS feature_id, f.titulo AS feature_titulo,
+                   h.id AS historia_id, h.titulo AS historia_titulo,
+                   t.id AS tarefa_id, t.titulo AS tarefa_titulo,
+                   t.is_extraordinaria, t.descricao, t.dias, t.conclusao,
+                   t.responsavel_id, t.baseline_inicio, t.baseline_fim,
+                   t.inicio, t.fim, t.kanban_coluna_id, t.sprint, t.planejado,
+                   t.predecessora_id, t.status AS tarefa_status,
+                   s.id AS subtarefa_id, s.titulo AS subtarefa_titulo, s.concluida
+            FROM projeto.epicos e
+            LEFT JOIN projeto.features f ON f.epico_id = e.id
+            LEFT JOIN projeto.historias h ON h.feature_id = f.id
+            LEFT JOIN projeto.tarefas_hierarquicas t ON t.historia_id = h.id
+            LEFT JOIN projeto.subtarefas s ON s.tarefa_id = t.id
+            WHERE e.empresa_id = %s AND e.projeto_id = %s
+            ORDER BY e.titulo, f.titulo, h.titulo, t.titulo, s.titulo
+        """, (empresa_id, projeto_id))
+        rows = cur.fetchall()
+
+    # Mapa responsáveis -> nome
+    mapa_resp = {str(r['id']): r['nome'] for r in carregar_responsaveis()}
+
+    tarefas_map = {}
+    for r in rows:
+        if not r['tarefa_id']:
+            continue
+        tid = str(r['tarefa_id'])
+        if tid not in tarefas_map:
+            tarefas_map[tid] = {
+                'id': r['tarefa_id'],
+                'tipo': 'task',
+                'is_extraordinaria': r['is_extraordinaria'],
+                'titulo': r['tarefa_titulo'],
+                'tarefa': r['tarefa_titulo'],
+                'subtarefa': None,
+                'fase': None,
+                'modulo': None,
+                'descricao': r['descricao'],
+                'dias': r['dias'] or 1,
+                'conclusao': r['conclusao'] or 0,
+                'responsavel_id': r['responsavel_id'],
+                'responsavel_nome': mapa_resp.get(str(r['responsavel_id'])) if r['responsavel_id'] else None,
+                'baseline_inicio': r['baseline_inicio'],
+                'baseline_fim': r['baseline_fim'],
+                'inicio': r['inicio'],
+                'fim': r['fim'],
+                'kanban_coluna_id': r['kanban_coluna_id'],
+                'sprint': r['sprint'],
+                'planejado': r['planejado'],
+                'predecessora_id': r['predecessora_id'],
+                'status': r['tarefa_status'],
+                'epico_id': r['epico_id'],
+                'epico_titulo': r['epico_titulo'],
+                'feature_id': r['feature_id'],
+                'feature_titulo': r['feature_titulo'],
+                'historia_id': r['historia_id'],
+                'historia_titulo': r['historia_titulo'],
+                'subtarefas': [],
+            }
+        if r['subtarefa_id']:
+            tarefas_map[tid]['subtarefas'].append({
+                'id': r['subtarefa_id'],
+                'titulo': r['subtarefa_titulo'],
+                'concluida': r['concluida'],
+            })
+
+    return list(tarefas_map.values())
+
+
+def adicionar_epico(empresa_id, projeto_id, titulo, descricao=None):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("""
+            INSERT INTO projeto.epicos (empresa_id, projeto_id, titulo, descricao)
+            VALUES (%s, %s, %s, %s) RETURNING id
+        """, (empresa_id, projeto_id, titulo, descricao))
+        novo_id = cur.fetchone()[0]
+    db.commit()
+    return novo_id
+
+def adicionar_feature(empresa_id, epico_id, titulo, descricao=None):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("""
+            INSERT INTO projeto.features (empresa_id, epico_id, titulo, descricao)
+            VALUES (%s, %s, %s, %s) RETURNING id
+        """, (empresa_id, epico_id, titulo, descricao))
+        novo_id = cur.fetchone()[0]
+    db.commit()
+    return novo_id
+
+def adicionar_historia(empresa_id, epico_id, feature_id, titulo, descricao=None, pontos=0):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("""
+            INSERT INTO projeto.historias (empresa_id, epico_id, feature_id, titulo, descricao, pontos)
+            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
+        """, (empresa_id, epico_id, feature_id, titulo, descricao, pontos))
+        novo_id = cur.fetchone()[0]
+    db.commit()
+    return novo_id
+
+def adicionar_tarefa_hierarquica(empresa_id, epico_id, historia_id, titulo, is_extraordinaria=False,
+                                 descricao=None, responsavel_id=None, dias=1, sprint=None):
+    """
+    Adiciona uma tarefa na hierarquia.
+    - Se historia_id for informado e is_extraordinaria=False -> tarefa normal.
+    - Se historia_id for None e is_extraordinaria=True  -> tarefa extraordinária.
+    """
+    if is_extraordinaria:
+        historia_id = None
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("""
+            INSERT INTO projeto.tarefas_hierarquicas
+                (empresa_id, epico_id, historia_id, is_extraordinaria, titulo, descricao,
+                 responsavel_id, dias, sprint)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+        """, (empresa_id, epico_id, historia_id, is_extraordinaria, titulo, descricao,
+              responsavel_id, dias, sprint))
+        novo_id = cur.fetchone()[0]
+    db.commit()
+    return novo_id
+
+def adicionar_subtarefa(empresa_id, epico_id, tarefa_id, titulo):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("""
+            INSERT INTO projeto.subtarefas (empresa_id, epico_id, tarefa_id, titulo)
+            VALUES (%s, %s, %s, %s) RETURNING id
+        """, (empresa_id, epico_id, tarefa_id, titulo))
+        novo_id = cur.fetchone()[0]
+    db.commit()
+    return novo_id
+
+def obter_epico_por_id(empresa_id, epico_id):
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM projeto.epicos WHERE id = %s AND empresa_id = %s", (epico_id, empresa_id))
+        return dict(cur.fetchone()) if cur.rowcount > 0 else None
+
+def obter_feature_por_id(empresa_id, feature_id):
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM projeto.features WHERE id = %s AND empresa_id = %s", (feature_id, empresa_id))
+        return dict(cur.fetchone()) if cur.rowcount > 0 else None
+
+def obter_historia_por_id(empresa_id, historia_id):
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM projeto.historias WHERE id = %s AND empresa_id = %s", (historia_id, empresa_id))
+        return dict(cur.fetchone()) if cur.rowcount > 0 else None
+
+def excluir_epico(empresa_id, epico_id):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM projeto.epicos WHERE id = %s AND empresa_id = %s", (epico_id, empresa_id))
+    db.commit()
+
+def excluir_feature(empresa_id, feature_id):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM projeto.features WHERE id = %s AND empresa_id = %s", (feature_id, empresa_id))
+    db.commit()
+
+def excluir_historia(empresa_id, historia_id):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM projeto.historias WHERE id = %s AND empresa_id = %s", (historia_id, empresa_id))
+    db.commit()
+
+def excluir_tarefa_hierarquica(empresa_id, tarefa_id):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM projeto.tarefas_hierarquicas WHERE id = %s AND empresa_id = %s", (tarefa_id, empresa_id))
+    db.commit()
+
+def excluir_subtarefa(empresa_id, subtarefa_id):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM projeto.subtarefas WHERE id = %s AND empresa_id = %s", (subtarefa_id, empresa_id))
     db.commit()
 

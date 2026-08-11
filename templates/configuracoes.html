@@ -57,13 +57,22 @@
                                 <label for="email" class="block text-sm font-medium text-slate-700">E-mail</label>
                                 <input type="email" name="email" id="email" required class="mt-1 w-full input-field">
                             </div>
-                            <div>
+<div>
                                 <label for="modelo_trabalho" class="block text-sm font-medium text-slate-700">Modelo de Trabalho</label>
                                 <select name="modelo_trabalho" id="modelo_trabalho" class="mt-1 w-full input-field">
                                     <option value="Home Office">Home Office</option>
                                     <option value="Híbrido">Híbrido</option>
                                     <option value="Alocado">Alocado</option>
                                 </select>
+                            </div>
+<div>
+                                <label for="perfil" class="block text-sm font-medium text-slate-700">Perfil / Papel</label>
+                                <select name="perfil" id="perfil" class="mt-1 w-full input-field">
+                                    {% for p in perfis %}
+                                    <option value="{{ p.id }}">{{ p.nome }}</option>
+                                    {% endfor %}
+                                </select>
+                                <p class="text-xs text-slate-500 mt-1">Define a alçada de aprovação na matriz de promoção/rebaixamento de itens.</p>
                             </div>
                             <div>
                                 <label for="horas_semanais" class="block text-sm font-medium text-slate-700">Horas/Semana</label>
@@ -88,6 +97,7 @@
                                 <thead class="bg-gray-50">
                                     <tr>
                                         <th class="px-6 py-3 font-semibold text-slate-600 text-left">Nome</th>
+                                        <th class="px-6 py-3 font-semibold text-slate-600 text-left">Perfil</th>
                                         <th class="px-6 py-3 font-semibold text-slate-600 text-left">Modelo</th>
                                         <th class="px-6 py-3 font-semibold text-slate-600 text-left">Férias</th>
                                         <th class="px-6 py-3"></th>
@@ -97,6 +107,10 @@
                                     {% for r in responsaveis %}
                                     <tr class="hover:bg-gray-50">
                                         <td class="px-6 py-3 font-medium">{{ r.get('nome') }}</td>
+                                        <td class="px-6 py-3 text-slate-600">
+                                            {% set perfil_nome = perfis | selectattr('id', 'equalto', r.get('perfil') or 'executor') | map(attribute='nome') | first %}
+                                            <span class="px-2 py-0.5 inline-block rounded-full text-xs font-semibold {% if r.get('perfil') == 'product_manager' %}bg-purple-100 text-purple-700{% elif r.get('perfil') == 'product_owner' %}bg-blue-100 text-blue-700{% elif r.get('perfil') == 'scrum_master' %}bg-emerald-100 text-emerald-700{% else %}bg-gray-100 text-gray-700{% endif %}">{{ perfil_nome or 'Executor' }}</span>
+                                        </td>
                                         <td class="px-6 py-3 text-slate-600">{{ r.get('modelo_trabalho') or 'N/A' }}</td>
                                         <td class="px-6 py-3 text-slate-600 text-xs">
                                             {% for periodo in r.get('ferias', []) %}
@@ -304,13 +318,14 @@
             document.getElementById('ferias-json').value = JSON.stringify(ferias);
         });
 
-        function editResponsavel(r) {
+function editResponsavel(r) {
             document.getElementById('form-title').innerText = 'Editar Responsável';
             document.getElementById('responsavel-id').value = r.id;
             document.getElementById('nome').value = r.nome;
             document.getElementById('email').value = r.email;
             document.getElementById('modelo_trabalho').value = r.modelo_trabalho;
             document.getElementById('horas_semanais').value = r.horas_semanais;
+            document.getElementById('perfil').value = r.perfil || 'executor';
 
             const feriasContainer = document.getElementById('ferias-container');
             feriasContainer.innerHTML = '';

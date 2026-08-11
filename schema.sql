@@ -9,9 +9,28 @@
 -- =============================================================================
 
 -- Cria os schemas por domínio (idempotente)
+CREATE SCHEMA IF NOT EXISTS core;
 CREATE SCHEMA IF NOT EXISTS rh;
 CREATE SCHEMA IF NOT EXISTS projeto;
 CREATE SCHEMA IF NOT EXISTS config;
+
+-- =============================================================================
+-- SCHEMA core — NÚCLEO MULTI-TENANT
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- Tabela de Empresas (Tenant)
+-- Contexto multi-tenant: todas as entidades pertencem a uma empresa.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS core.empresas (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    nome VARCHAR(255) NOT NULL,
+    cnpj VARCHAR(20),
+    ativo BOOLEAN DEFAULT TRUE,
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON TABLE core.empresas IS 'Cadastro de empresas (tenants) para isolamento multi-tenant.';
 
 -- Garante que a extensão para UUIDs esteja disponível (instalada no schema 'public').
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -26,10 +45,35 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS rh.times (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    nome VARCHAR(255) NOT NULL UNIQUE
+    empresa_id UUID REFERENCES core.empresas(id) ON DELETE CASCADE,
+    nome VARCHAR(255) NOT NULL,
+    UNIQUE(empresa_id, nome)
 );
 
 COMMENT ON TABLE rh.times IS 'Cadastro das equipes de trabalho.';
+
+-- -----------------------------------------------------------------------------
+-- Tabela de Perfis (Papéis de Acesso e Alçadas)
+-- Define os perfis de usuário usados na matriz de promoção/rebaixamento:
+--   product_manager   -> Gerente de Produto (aprova Feature ↔ Épico)
+--   scrum_master      -> Gestor do Projeto (gestão do fluxo Scrum)
+--   product_owner     -> Dono do Produto (aprova Tarefa/História ↔ Feature)
+--   executor          -> Executor (decide livremente em Subtarefa ↔ Tarefa)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rh.perfis (
+    id VARCHAR(50) PRIMARY KEY,
+    nome VARCHAR(255) NOT NULL,
+    descricao TEXT
+);
+
+COMMENT ON TABLE rh.perfis IS 'Perfis de usuário e suas alçadas de aprovação.';
+
+INSERT INTO rh.perfis (id, nome, descricao) VALUES
+    ('product_manager', 'Gerente de Produto', 'Aprova transições envolvendo Épicos (Feature ↔ Épico).'),
+    ('scrum_master', 'Gestor do Projeto', 'Gestão do fluxo Scrum; coordena o time e o andamento das entregas.'),
+    ('product_owner', 'Dono do Produto', 'Aprova transições envolvendo Features (Tarefa/História ↔ Feature).'),
+    ('executor', 'Executor', 'Decide livremente em Subtarefa ↔ Tarefa.')
+ON CONFLICT (id) DO UPDATE SET nome = EXCLUDED.nome, descricao = EXCLUDED.descricao;
 
 -- -----------------------------------------------------------------------------
 -- Tabela de Responsáveis (Usuários)
@@ -37,11 +81,14 @@ COMMENT ON TABLE rh.times IS 'Cadastro das equipes de trabalho.';
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS rh.responsaveis (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    empresa_id UUID REFERENCES core.empresas(id) ON DELETE CASCADE,
     nome VARCHAR(255) NOT NULL,
-    email VARCHAR(255) NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL,
     modelo_trabalho VARCHAR(50),
     horas_semanais INTEGER,
-    criado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    perfil VARCHAR(50) DEFAULT 'executor' REFERENCES rh.perfis(id),
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(empresa_id, email)
 );
 
 COMMENT ON TABLE rh.responsaveis IS 'Cadastro dos responsáveis pelas tarefas.';
@@ -82,10 +129,12 @@ COMMENT ON TABLE rh.ferias IS 'Armazena os períodos de férias de cada respons�
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS projeto.projetos (
     id VARCHAR(255) PRIMARY KEY,
+    empresa_id UUID REFERENCES core.empresas(id) ON DELETE CASCADE,
     nome VARCHAR(255) NOT NULL,
     descricao TEXT, -- Descrição do projeto (objetivo macro)
     time_id UUID REFERENCES rh.times(id) ON DELETE SET NULL, -- Vínculo com o time (schema rh)
-    criado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(empresa_id, id)
 );
 
 COMMENT ON TABLE projeto.projetos IS 'Cadastro de todos os projetos, com vínculo opcional a um time.';
@@ -130,6 +179,111 @@ COMMENT ON COLUMN projeto.tarefas.id IS 'ID de exibição para o usuário (seque
 COMMENT ON COLUMN projeto.tarefas.predecessora_id IS 'Refere-se ao ID de exibição da tarefa predecessora dentro do mesmo projeto.';
 
 -- -----------------------------------------------------------------------------
+-- Tabela de Épicos (maior nível hierárquico dentro de um projeto)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS projeto.epicos (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    empresa_id UUID NOT NULL REFERENCES core.empresas(id) ON DELETE CASCADE,
+    projeto_id VARCHAR(255) NOT NULL REFERENCES projeto.projetos(id) ON DELETE CASCADE,
+    titulo VARCHAR(255) NOT NULL,
+    descricao TEXT,
+    status VARCHAR(50) DEFAULT 'PLANEJADO',
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_epicos_projeto ON projeto.epicos(projeto_id);
+CREATE INDEX IF NOT EXISTS idx_epicos_empresa ON projeto.epicos(empresa_id);
+
+-- -----------------------------------------------------------------------------
+-- Tabela de Features (filhas de um Épico)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS projeto.features (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    empresa_id UUID NOT NULL REFERENCES core.empresas(id) ON DELETE CASCADE,
+    epico_id UUID NOT NULL REFERENCES projeto.epicos(id) ON DELETE CASCADE,
+    titulo VARCHAR(255) NOT NULL,
+    descricao TEXT,
+    status VARCHAR(50) DEFAULT 'EM_ANDAMENTO',
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_features_epico ON projeto.features(epico_id);
+
+-- -----------------------------------------------------------------------------
+-- Tabela de Histórias de Usuário (filhas de uma Feature)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS projeto.historias (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    empresa_id UUID NOT NULL REFERENCES core.empresas(id) ON DELETE CASCADE,
+    epico_id UUID NOT NULL REFERENCES projeto.epicos(id) ON DELETE CASCADE,
+    feature_id UUID NOT NULL REFERENCES projeto.features(id) ON DELETE CASCADE,
+    titulo VARCHAR(255) NOT NULL,
+    descricao TEXT,
+    pontos INT DEFAULT 0,
+    status VARCHAR(50) DEFAULT 'A_FAZER',
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_historias_epico ON projeto.historias(epico_id);
+CREATE INDEX IF NOT EXISTS idx_historias_feature ON projeto.historias(feature_id);
+
+-- -----------------------------------------------------------------------------
+-- Tabela de Tarefas (normais ou extraordinárias)
+-- - historia_id OBRIGATÓRIO para tarefas normais
+-- - historia_id NULL + is_extraordinaria TRUE para tarefas extraordinárias
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS projeto.tarefas_hierarquicas (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    empresa_id UUID NOT NULL REFERENCES core.empresas(id) ON DELETE CASCADE,
+    epico_id UUID NOT NULL REFERENCES projeto.epicos(id) ON DELETE CASCADE,
+    historia_id UUID REFERENCES projeto.historias(id) ON DELETE CASCADE,
+    is_extraordinaria BOOLEAN NOT NULL DEFAULT FALSE,
+    titulo VARCHAR(255) NOT NULL,
+    descricao TEXT,
+    status VARCHAR(50) DEFAULT 'A_FAZER',
+    prioridade VARCHAR(20) DEFAULT 'MEDIA',
+    responsavel_id UUID REFERENCES rh.responsaveis(id) ON DELETE SET NULL,
+    dias INTEGER DEFAULT 1,
+    conclusao INTEGER DEFAULT 0,
+    baseline_inicio DATE,
+    baseline_fim DATE,
+    inicio DATE,
+    fim DATE,
+    kanban_coluna_id VARCHAR(255),
+    sprint VARCHAR(100),
+    planejado BOOLEAN DEFAULT FALSE,
+    predecessora_id UUID,
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+
+    -- Regra de negócio: tarefa sem história é, obrigatoriamente, extraordinária.
+    CONSTRAINT chk_tarefa_extraordinaria CHECK (
+        (historia_id IS NOT NULL AND is_extraordinaria = FALSE) OR
+        (historia_id IS NULL AND is_extraordinaria = TRUE)
+    ),
+    CONSTRAINT chk_tarefa_extraordinaria_titulo CHECK (titulo <> '')
+);
+
+CREATE INDEX IF NOT EXISTS idx_tarefas_hie_epico ON projeto.tarefas_hierarquicas(epico_id);
+CREATE INDEX IF NOT EXISTS idx_tarefas_hie_historia ON projeto.tarefas_hierarquicas(historia_id);
+CREATE INDEX IF NOT EXISTS idx_tarefas_hie_empresa ON projeto.tarefas_hierarquicas(empresa_id);
+
+-- -----------------------------------------------------------------------------
+-- Tabela de Subtarefas (menor nível hierárquico)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS projeto.subtarefas (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    empresa_id UUID NOT NULL REFERENCES core.empresas(id) ON DELETE CASCADE,
+    epico_id UUID NOT NULL REFERENCES projeto.epicos(id) ON DELETE CASCADE,
+    tarefa_id UUID NOT NULL REFERENCES projeto.tarefas_hierarquicas(id) ON DELETE CASCADE,
+    titulo VARCHAR(255) NOT NULL,
+    concluida BOOLEAN DEFAULT FALSE,
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_subtarefas_tarefa ON projeto.subtarefas(tarefa_id);
+CREATE INDEX IF NOT EXISTS idx_subtarefas_empresa ON projeto.subtarefas(empresa_id);
+
+-- -----------------------------------------------------------------------------
 -- Tabela de Colunas do Kanban
 -- Configuração das colunas para cada projeto.
 -- -----------------------------------------------------------------------------
@@ -145,22 +299,107 @@ CREATE TABLE IF NOT EXISTS projeto.kanban_colunas (
     UNIQUE(projeto_id, coluna_id)
 );
 
+-- =============================================================================
+-- NOVA ARQUITETURA (WORK ITEM ENGINE)
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- Tabela de Tipos de Work Item (configurável por projeto)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS projeto.work_item_types (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    projeto_id VARCHAR(255) NOT NULL REFERENCES projeto.projetos(id) ON DELETE CASCADE,
+    nome VARCHAR(100) NOT NULL,
+    descricao TEXT,
+    icone VARCHAR(50),
+    cor VARCHAR(20),
+    -- parent_type_id permite definir hierarquias (ex: 'Subtask' só pode ser filha de 'Task')
+    parent_type_id UUID REFERENCES projeto.work_item_types(id) ON DELETE SET NULL,
+    ativo BOOLEAN DEFAULT TRUE,
+    UNIQUE(projeto_id, nome)
+);
+
+COMMENT ON TABLE projeto.work_item_types IS 'Tipos de itens de trabalho configuráveis por projeto (Task, Bug, Campaign, etc).';
+
+-- -----------------------------------------------------------------------------
+-- Tabela Central de Work Items (substitui tarefas, epicos, etc.)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS projeto.work_items (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    empresa_id UUID NOT NULL REFERENCES core.empresas(id) ON DELETE CASCADE,
+    projeto_id VARCHAR(255) NOT NULL REFERENCES projeto.projetos(id) ON DELETE CASCADE,
+    -- Chave legível para o usuário (ex: MKT-123)
+    chave VARCHAR(20) NOT NULL,
+    -- ID sequencial por projeto para gerar a chave
+    seq_id SERIAL,
+    type_id UUID NOT NULL REFERENCES projeto.work_item_types(id) ON DELETE RESTRICT,
+    parent_id UUID REFERENCES projeto.work_items(id) ON DELETE SET NULL, -- Auto-relacionamento para hierarquia
+    titulo VARCHAR(255) NOT NULL,
+    descricao TEXT,
+    status_id UUID, -- FK para workflow_statuses
+    prioridade_id UUID, -- FK para uma futura tabela de prioridades
+    responsavel_id UUID REFERENCES rh.responsaveis(id) ON DELETE SET NULL,
+    reporter_id UUID REFERENCES rh.responsaveis(id) ON DELETE SET NULL,
+    time_id UUID REFERENCES rh.times(id) ON DELETE SET NULL,
+    data_vencimento DATE,
+    data_inicio DATE,
+    data_conclusao DATE,
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    atualizado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(projeto_id, chave)
+);
+
+CREATE INDEX IF NOT EXISTS idx_work_items_projeto ON projeto.work_items(projeto_id);
+CREATE INDEX IF NOT EXISTS idx_work_items_responsavel ON projeto.work_items(responsavel_id);
+CREATE INDEX IF NOT EXISTS idx_work_items_parent ON projeto.work_items(parent_id);
+
+COMMENT ON TABLE projeto.work_items IS 'Entidade central para todos os itens de trabalho (tarefas, bugs, campanhas, etc).';
+
 -- -----------------------------------------------------------------------------
 -- Tabela de Atividades e Comentários das Tarefas
 -- Armazena o histórico de alterações e os comentários de cada tarefa.
 -- -----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS projeto.tarefa_atividades (
+CREATE TABLE IF NOT EXISTS projeto.work_item_atividades (
     id SERIAL PRIMARY KEY,
-    tarefa_pk_id INTEGER NOT NULL REFERENCES projeto.tarefas(pk_id) ON DELETE CASCADE,
+    work_item_id UUID NOT NULL REFERENCES projeto.work_items(id) ON DELETE CASCADE,
     responsavel_id UUID REFERENCES rh.responsaveis(id) ON DELETE SET NULL,
     tipo VARCHAR(50) NOT NULL, -- 'comentario' ou 'log'
     detalhe TEXT NOT NULL,
     criado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_tarefa_atividades_tarefa ON projeto.tarefa_atividades(tarefa_pk_id);
+CREATE INDEX IF NOT EXISTS idx_work_item_atividades_work_item ON projeto.work_item_atividades(work_item_id);
 
-COMMENT ON TABLE projeto.tarefa_atividades IS 'Log de atividades e comentários para cada tarefa.';
+COMMENT ON TABLE projeto.work_item_atividades IS 'Log de atividades e comentários para cada Work Item.';
+
+-- -----------------------------------------------------------------------------
+-- Tabela de Campos Personalizados (definição)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS projeto.custom_fields (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    projeto_id VARCHAR(255) NOT NULL REFERENCES projeto.projetos(id) ON DELETE CASCADE,
+    nome VARCHAR(100) NOT NULL,
+    tipo_dado VARCHAR(50) NOT NULL, -- ex: 'text', 'number', 'date', 'user_picker'
+    UNIQUE(projeto_id, nome)
+);
+
+COMMENT ON TABLE projeto.custom_fields IS 'Definição de campos personalizados por projeto.';
+
+-- -----------------------------------------------------------------------------
+-- Tabela de Valores de Campos Personalizados
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS projeto.custom_field_values (
+    id SERIAL PRIMARY KEY,
+    work_item_id UUID NOT NULL REFERENCES projeto.work_items(id) ON DELETE CASCADE,
+    custom_field_id UUID NOT NULL REFERENCES projeto.custom_fields(id) ON DELETE CASCADE,
+    valor_texto TEXT,
+    valor_numero NUMERIC,
+    valor_data TIMESTAMP WITH TIME ZONE,
+    valor_uuid UUID, -- Para campos como 'user_picker'
+    UNIQUE(work_item_id, custom_field_id)
+);
+
+COMMENT ON TABLE projeto.custom_field_values IS 'Armazena os valores dos campos personalizados para cada work item.';
 
 -- -----------------------------------------------------------------------------
 -- Tabela de Configurações por Projeto

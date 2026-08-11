@@ -21,20 +21,29 @@ main_bp = Blueprint('main', __name__)
 
 @main_bp.route('/')
 def home():
-    projetos = project_manager.carregar_projetos()
+    empresas = project_manager.carregar_empresas()
+    empresa_ativa = request.args.get('empresa') or ''
+    if empresa_ativa:
+        projetos = project_manager.carregar_projetos_por_empresa(empresa_ativa)
+    else:
+        projetos = project_manager.carregar_projetos()
     for p in projetos:
         tarefas = project_manager.carregar_tarefas(p['id'])
         p['stats'] = project_manager.calcular_stats(tarefas)
-    return render_template('home.html', projetos=projetos)
+    return render_template('home.html', projetos=projetos, empresas=empresas, empresa_ativa=empresa_ativa)
 
 @main_bp.route('/criar_projeto', methods=['POST'])
 def criar_projeto():
     nome = request.form.get('nome_projeto')
     descricao = request.form.get('descricao_projeto', '')
+    empresa_id = request.form.get('empresa_id') or None
     if not nome:
         return redirect(url_for('main.home'))
     project_id = secure_filename(nome)
-    project_manager.criar_projeto_db(project_id, nome, descricao)
+    if empresa_id:
+        project_manager.criar_projeto_empresa(empresa_id, project_id, nome, descricao)
+    else:
+        project_manager.criar_projeto_db(project_id, nome, descricao)
     
     arquivo_csv = request.files.get('arquivo_csv')
     if arquivo_csv and arquivo_csv.filename != '':
@@ -53,12 +62,12 @@ def criar_projeto():
 
 @main_bp.route('/projeto/<project_id>/detalhes')
 def detalhes_projeto(project_id):
-    """Página de detalhes do projeto com descrição, épicos e histórias."""
+    """Página de detalhes do projeto com descrição e hierarquia em árvore."""
     projeto = project_manager.carregar_projeto_por_id(project_id)
     tarefas = project_manager.carregar_tarefas(project_id)
     responsaveis = project_manager.carregar_responsaveis()
     
-    # Separa por tipo
+    # Separa por tipo (para as estatísticas superiores)
     epics = [t for t in tarefas if t.get('tipo') == 'epic']
     features = [t for t in tarefas if t.get('tipo') == 'feature']
     stories = [t for t in tarefas if t.get('tipo') == 'story']
@@ -66,9 +75,62 @@ def detalhes_projeto(project_id):
     subtasks = [t for t in tarefas if t.get('tipo') == 'subtask']
     
     stats = project_manager.calcular_stats(tarefas)
+
+    # Monta uma árvore hierárquica aninhada a partir do parent_id
+    arvore = _montar_arvore_hierarquica(tarefas)
+
     return render_template('detalhes_projeto.html', project_id=project_id, projeto=projeto, 
                           epics=epics, features=features, stories=stories, tasks=tasks, subtasks=subtasks,
-                          stats=stats, responsaveis=responsaveis, page='detalhes')
+                          stats=stats, responsaveis=responsaveis, arvore=arvore, page='detalhes')
+
+
+def _montar_arvore_hierarquica(tarefas):
+    """
+    Constrói uma árvore de itens hierárquicos (Épico → Feature → História →
+    Tarefa → Subtarefa) usando o campo parent_id, preservando a ordem original.
+
+    Retorna uma lista de nós na forma:
+      [ { 'item': {..tarefa..}, 'children': [ { 'item': {..}, 'children': [...] }, ... ] } ]
+    Cada nó com 'tipo' épico/feature/story/task tem seus filhos permitidos abaixo.
+    Detecção de ciclos evita recursão infinita.
+    """
+    tipo_nivel = {'epic': 1, 'feature': 2, 'story': 3, 'task': 4, 'subtask': 5}
+    por_id = {str(t['id']): t for t in tarefas}
+    raizes = []  # itens sem pai válido, na ordem original
+
+    # Mapeia filhos por pai
+    filhos_por_pai = {}
+    for t in tarefas:
+        pid = t.get('parent_id')
+        if pid is not None and str(pid).strip() != '' and str(pid) in por_id:
+            filhos_por_pai.setdefault(str(pid), []).append(t)
+        else:
+            raizes.append(t)
+
+    def tem_ciclo(t_id, visitados=None):
+        if visitados is None:
+            visitados = set()
+        if t_id in visitados:
+            return True
+        visitados.add(t_id)
+        pai = por_id[t_id].get('parent_id')
+        if pai is None or str(pai).strip() == '' or str(pai) not in por_id:
+            return False
+        return tem_ciclo(str(pai), visitados)
+
+    def montar(no):
+        no_id = str(no['id'])
+        nivel = tipo_nivel.get(no.get('tipo') or 'task', 4)
+        node = {'item': no, 'children': []}
+        if nivel < 5:  # Subtarefa (nível 5) não possui filhos
+            for f in filhos_por_pai.get(no_id, []):
+                f_nivel = tipo_nivel.get(f.get('tipo') or 'task', 4)
+                # Só admite filhos do nível imediatamente abaixo que não criem ciclo
+                if f_nivel == nivel + 1 and not tem_ciclo(str(f['id'])):
+                    node['children'].append(montar(f))
+        return node
+
+    return [montar(r) for r in raizes]
 
 @main_bp.route('/projeto/<project_id>/atualizar_descricao', methods=['POST'])
 def atualizar_descricao_projeto(project_id):
@@ -116,7 +178,8 @@ def gerenciar_configuracoes():
     times = project_manager.carregar_times()
     feriados = project_manager.carregar_feriados_custom()
     settings = project_manager.carregar_settings()
-    return render_template('configuracoes.html', responsaveis=responsaveis, times=times, feriados=sorted(list(feriados)), settings=settings)
+    perfis = project_manager.carregar_perfis()
+    return render_template('configuracoes.html', responsaveis=responsaveis, times=times, feriados=sorted(list(feriados)), settings=settings, perfis=perfis)
 
 @main_bp.route('/configuracoes/dias', methods=['POST'])
 def salvar_configuracoes_dias():
@@ -223,7 +286,8 @@ def planilha(project_id):
         if col['tipo'] == 'meio':
             coluna_andamento_id = col['coluna_id']
             break
-    return render_template('planilha.html', tarefas=tarefas, page='planilha', project_id=project_id, stats=stats, responsaveis=responsaveis, times=times, projeto=projeto, coluna_andamento_id=coluna_andamento_id)
+    perfis = project_manager.carregar_perfis()
+    return render_template('planilha.html', tarefas=tarefas, page='planilha', project_id=project_id, stats=stats, responsaveis=responsaveis, times=times, projeto=projeto, coluna_andamento_id=coluna_andamento_id, perfis=perfis)
 
 @main_bp.route('/projeto/<project_id>/associar_time', methods=['POST'])
 def associar_time_projeto(project_id):
@@ -233,9 +297,29 @@ def associar_time_projeto(project_id):
 
 @main_bp.route('/projeto/<project_id>/kanban')
 def kanban(project_id):
-    tarefas = project_manager.carregar_tarefas(project_id)
-    # Mostra apenas tarefas planejadas (com sprint definido) no Kanban
-    tarefas = [t for t in tarefas if t.get('planejado')]
+    # Tenta carregar a nova hierarquia (5 tabelas). Se o projeto pertence a uma
+    # empresa, usa a estrutura Épico → Feature → História → Tarefa → Subtarefa;
+    # caso contrário, cai no modelo legado (tabela única projeto.tarefas).
+    projeto = project_manager.carregar_projeto_por_id(project_id)
+    empresa_id = projeto.get('empresa_id') if projeto else None
+    tarefas_hier = []
+    if empresa_id:
+        try:
+            tarefas_hier = project_manager.carregar_tarefas_hierarquicas_plano(empresa_id, project_id)
+        except Exception as e:
+            print("Falha ao carregar hierarquia no Kanban:", e)
+            tarefas_hier = []
+
+    if tarefas_hier:
+        tarefas = tarefas_hier
+    else:
+        tarefas = project_manager.carregar_tarefas(project_id)
+
+    # No modelo hierárquico utilizamos todas as tarefas com contexto de épico;
+    # no legado, apenas as planejadas.
+    if not tarefas_hier:
+        tarefas = [t for t in tarefas if t.get('planejado')]
+
     kanban_config = project_manager.carregar_kanban_config(project_id)
     colunas = kanban_config.get('colunas', [])
     mapa_tipos_coluna = {col['coluna_id']: col['tipo'] for col in colunas}
@@ -251,9 +335,10 @@ def kanban(project_id):
         if t.get('responsavel_id'):
             t['responsavel_nome'] = mapa_responsaveis.get(str(t['responsavel_id']))
 
-        # Carrega atividades e comentários
-        atividades = project_manager.carregar_atividades_tarefa(t['pk_id'])
-        t['atividades'] = atividades
+# Carrega atividades e comentários (apenas no modelo legado que possui pk_id)
+        t['atividades'] = []
+        if t.get('pk_id'):
+            t['atividades'] = project_manager.carregar_atividades_tarefa(t['pk_id'])
 
         # RN024: Identificar tarefas vencidas (Lógica existente)
         t['em_atraso'] = False
@@ -391,6 +476,29 @@ def editar_tarefa_kanban(project_id, task_id):
 
     return jsonify({"status": "sucesso"}), 200
 
+@main_bp.route('/projeto/<project_id>/converter_tipo', methods=['POST'])
+def converter_tipo(project_id):
+    """Promove ou rebaixa um item na hierarquia (Épico → Feature → História → Tarefa → Subtarefa),
+    validando a alçada (perfil) de quem realiza a operação."""
+    dados = request.get_json()
+    task_id = dados.get('task_id')
+    direcao = dados.get('direcao')  # 'promover' ou 'rebaixar'
+    responsavel_id = dados.get('responsavel_id')
+    if not task_id or direcao not in ('promover', 'rebaixar'):
+        return jsonify({"status": "erro", "mensagem": "Parâmetros inválidos."}), 400
+    try:
+        resultado = project_manager.converter_tipo_tarefa(
+            project_id, task_id, direcao, responsavel_id=responsavel_id
+        )
+        return jsonify(resultado), 200
+    except PermissionError as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 403
+    except ValueError as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 400
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
 @main_bp.route('/projeto/<project_id>/planejar_tarefa', methods=['POST'])
 def planejar_tarefa(project_id):
     """Marca uma tarefa como planejada (para um sprint) ou remove do planejamento."""
@@ -439,3 +547,182 @@ def baixar_modelo():
     pd.DataFrame(columns=colunas).to_csv(buffer, index=False, encoding='utf-8')
     buffer.seek(0)
     return send_file(buffer, as_attachment=True, download_name='modelo_importacao.csv', mimetype='text/csv')
+
+
+# =============================================================================
+# ROTAS DE EMPRESAS (TENANT) E HIERARQUIA EM 5 TABELAS
+# =============================================================================
+
+@main_bp.route('/empresas')
+def empresas():
+    """Página de gestão de empresas (tenants) e perfis."""
+    empresas_lista = project_manager.carregar_empresas()
+    perfis = project_manager.carregar_perfis()
+    responsaveis = project_manager.carregar_responsaveis()
+    return render_template('empresas.html', empresas=empresas_lista, perfis=perfis,
+                           responsaveis=responsaveis, page='empresas')
+
+@main_bp.route('/empresas/adicionar', methods=['POST'])
+def adicionar_empresa():
+    nome = request.form.get('nome')
+    cnpj = request.form.get('cnpj', '')
+    ativo = request.form.get('ativo') == 'on'
+    if nome:
+        project_manager.adicionar_empresa({'nome': nome, 'cnpj': cnpj, 'ativo': ativo})
+    return redirect(url_for('main.empresas'))
+
+@main_bp.route('/empresas/editar/<empresa_id>', methods=['POST'])
+def editar_empresa(empresa_id):
+    nome = request.form.get('nome')
+    cnpj = request.form.get('cnpj', '')
+    ativo = request.form.get('ativo') == 'on'
+    project_manager.editar_empresa(empresa_id, {'nome': nome, 'cnpj': cnpj, 'ativo': ativo})
+    return redirect(url_for('main.empresas'))
+
+@main_bp.route('/empresas/excluir/<empresa_id>', methods=['POST'])
+def excluir_empresa(empresa_id):
+    project_manager.excluir_empresa(empresa_id)
+    return redirect(url_for('main.empresas'))
+
+# --- Rotas de Perfis (cadastro/alteração/exclusão) ---
+
+@main_bp.route('/perfis/adicionar', methods=['POST'])
+def adicionar_perfil():
+    dados = {
+        'id': request.form.get('id', ''),
+        'nome': request.form.get('nome', ''),
+        'descricao': request.form.get('descricao', ''),
+    }
+    try:
+        project_manager.adicionar_perfil(dados)
+    except ValueError as e:
+        print(f"Erro ao adicionar perfil: {e}")
+    return redirect(url_for('main.empresas'))
+
+@main_bp.route('/perfis/editar/<perfil_id>', methods=['POST'])
+def editar_perfil(perfil_id):
+    project_manager.editar_perfil(perfil_id, {
+        'nome': request.form.get('nome', ''),
+        'descricao': request.form.get('descricao', ''),
+    })
+    return redirect(url_for('main.empresas'))
+
+@main_bp.route('/perfis/excluir/<perfil_id>', methods=['POST'])
+def excluir_perfil(perfil_id):
+    project_manager.excluir_perfil(perfil_id)
+    return redirect(url_for('main.empresas'))
+
+# --- Rotas de hierarquia (5 tabelas) ---
+
+@main_bp.route('/empresa/<empresa_id>/projeto/<project_id>/hierarquia')
+def hierarquia(empresa_id, project_id):
+    """Página que exibe a hierarquia completa (Épico → Feature → História → Tarefa → Subtarefa)."""
+    empresa = project_manager.obter_empresa_por_id(empresa_id)
+    if not empresa:
+        return redirect(url_for('main.empresas'))
+    hierarquia = project_manager.carregar_hierarquia_completa(empresa_id, project_id)
+    responsaveis = project_manager.carregar_responsaveis()
+    return render_template('hierarquia.html', empresa_id=empresa_id, project_id=project_id,
+                          hierarquia=hierarquia, empresa=empresa, page='hierarquia',
+                          responsaveis=responsaveis)
+
+@main_bp.route('/empresa/<empresa_id>/projeto/<project_id>/backlog')
+def hierarquia_backlog(empresa_id, project_id):
+    """Backlog hierárquico baseado nas 5 tabelas (Épico → Feature → História → Tarefa [+EXTRA] → Subtarefa)."""
+    empresa = project_manager.obter_empresa_por_id(empresa_id)
+    if not empresa:
+        return redirect(url_for('main.empresas'))
+    hierarquia = project_manager.carregar_hierarquia_completa(empresa_id, project_id)
+    responsaveis = project_manager.carregar_responsaveis()
+    # Mapa de responsáveis para exibir nomes
+    mapa_resp = {str(r['id']): r['nome'] for r in responsaveis}
+    return render_template('hierarquia_backlog.html', empresa_id=empresa_id, project_id=project_id,
+                          hierarquia=hierarquia, empresa=empresa, page='backlog',
+                          responsaveis=responsaveis, mapa_resp=mapa_resp)
+
+@main_bp.route('/empresa/<empresa_id>/projeto/<project_id>/adicionar_epico', methods=['POST'])
+def hierarquia_adicionar_epico(empresa_id, project_id):
+    titulo = request.form.get('titulo')
+    descricao = request.form.get('descricao', '')
+    if titulo:
+        project_manager.adicionar_epico(empresa_id, project_id, titulo, descricao)
+    return redirect(url_for('main.hierarquia', empresa_id=empresa_id, project_id=project_id))
+
+@main_bp.route('/empresa/<empresa_id>/projeto/<project_id>/adicionar_feature', methods=['POST'])
+def hierarquia_adicionar_feature(empresa_id, project_id):
+    epico_id = request.form.get('epico_id')
+    titulo = request.form.get('titulo')
+    descricao = request.form.get('descricao', '')
+    if epico_id and titulo:
+        project_manager.adicionar_feature(empresa_id, epico_id, titulo, descricao)
+    return redirect(url_for('main.hierarquia', empresa_id=empresa_id, project_id=project_id))
+
+@main_bp.route('/empresa/<empresa_id>/projeto/<project_id>/adicionar_historia', methods=['POST'])
+def hierarquia_adicionar_historia(empresa_id, project_id):
+    feature_id = request.form.get('feature_id')
+    titulo = request.form.get('titulo')
+    descricao = request.form.get('descricao', '')
+    pontos = request.form.get('pontos', 0)
+    if feature_id and titulo:
+        feature = project_manager.obter_feature_por_id(empresa_id, feature_id)
+        epico_id = feature['epico_id'] if feature else None
+        project_manager.adicionar_historia(empresa_id, epico_id, feature_id, titulo, descricao, pontos)
+    return redirect(url_for('main.hierarquia', empresa_id=empresa_id, project_id=project_id))
+
+@main_bp.route('/empresa/<empresa_id>/projeto/<project_id>/adicionar_tarefa', methods=['POST'])
+def hierarquia_adicionar_tarefa(empresa_id, project_id):
+    historia_id = request.form.get('historia_id')
+    epico_id = request.form.get('epico_id')
+    titulo = request.form.get('titulo')
+    descricao = request.form.get('descricao', '')
+    responsavel_id = request.form.get('responsavel_id') or None
+    dias = request.form.get('dias', 1)
+    sprint = request.form.get('sprint', '')
+    extraordinaria = request.form.get('is_extraordinaria') == 'on'
+    if titulo:
+        project_manager.adicionar_tarefa_hierarquica(
+            empresa_id, epico_id, historia_id, titulo, is_extraordinaria=extraordinaria,
+            descricao=descricao, responsavel_id=responsavel_id, dias=dias,
+            sprint=sprint or None
+        )
+    return redirect(url_for('main.hierarquia', empresa_id=empresa_id, project_id=project_id))
+
+@main_bp.route('/empresa/<empresa_id>/projeto/<project_id>/adicionar_subtarefa', methods=['POST'])
+def hierarquia_adicionar_subtarefa(empresa_id, project_id):
+    tarefa_id = request.form.get('tarefa_id')
+    titulo = request.form.get('titulo')
+    if tarefa_id and titulo:
+        # Descobre o epico_id a partir da tarefa
+        from . import database
+        db = database.get_db()
+        with db.cursor() as cur:
+            cur.execute("SELECT epico_id FROM projeto.tarefas_hierarquicas WHERE id = %s AND empresa_id = %s", (tarefa_id, empresa_id))
+            row = cur.fetchone()
+        epico_id = row[0] if row else None
+        project_manager.adicionar_subtarefa(empresa_id, epico_id, tarefa_id, titulo)
+    return redirect(url_for('main.hierarquia', empresa_id=empresa_id, project_id=project_id))
+
+@main_bp.route('/empresa/<empresa_id>/projeto/<project_id>/excluir_epico/<item_id>', methods=['POST'])
+def hierarquia_excluir_epico(empresa_id, project_id, item_id):
+    project_manager.excluir_epico(empresa_id, item_id)
+    return redirect(url_for('main.hierarquia', empresa_id=empresa_id, project_id=project_id))
+
+@main_bp.route('/empresa/<empresa_id>/projeto/<project_id>/excluir_feature/<item_id>', methods=['POST'])
+def hierarquia_excluir_feature(empresa_id, project_id, item_id):
+    project_manager.excluir_feature(empresa_id, item_id)
+    return redirect(url_for('main.hierarquia', empresa_id=empresa_id, project_id=project_id))
+
+@main_bp.route('/empresa/<empresa_id>/projeto/<project_id>/excluir_historia/<item_id>', methods=['POST'])
+def hierarquia_excluir_historia(empresa_id, project_id, item_id):
+    project_manager.excluir_historia(empresa_id, item_id)
+    return redirect(url_for('main.hierarquia', empresa_id=empresa_id, project_id=project_id))
+
+@main_bp.route('/empresa/<empresa_id>/projeto/<project_id>/excluir_tarefa/<item_id>', methods=['POST'])
+def hierarquia_excluir_tarefa(empresa_id, project_id, item_id):
+    project_manager.excluir_tarefa_hierarquica(empresa_id, item_id)
+    return redirect(url_for('main.hierarquia', empresa_id=empresa_id, project_id=project_id))
+
+@main_bp.route('/empresa/<empresa_id>/projeto/<project_id>/excluir_subtarefa/<item_id>', methods=['POST'])
+def hierarquia_excluir_subtarefa(empresa_id, project_id, item_id):
+    project_manager.excluir_subtarefa(empresa_id, item_id)
+    return redirect(url_for('main.hierarquia', empresa_id=empresa_id, project_id=project_id))
