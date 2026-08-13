@@ -638,6 +638,20 @@ def executar_migracoes():
             WHERE kanban_coluna_id IS NULL
         """)
 
+        # Migração 017: uma tarefa vinculada a uma sprint participa da
+        # execução. Os registros legados entram pela coluna Iniciar, sem
+        # alterar itens que já avançaram para outra coluna do Kanban.
+        for tabela in ('tarefas', 'tarefas_hierarquicas'):
+            cur.execute(f"""
+                UPDATE projeto.{tabela}
+                SET planejado = TRUE,
+                    kanban_coluna_id = CASE
+                        WHEN kanban_coluna_id IS NULL OR kanban_coluna_id = 'backlog' THEN 'iniciar'
+                        ELSE kanban_coluna_id
+                    END
+                WHERE NULLIF(BTRIM(sprint), '') IS NOT NULL
+            """)
+
         # FK de empresa_id nas tabelas existentes (idempotente)
         for tabela in ['projetos', 'responsaveis', 'times']:
             schema = _schema_de_tabela(tabela)

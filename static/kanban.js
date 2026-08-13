@@ -100,7 +100,9 @@ document.getElementById('form-nova-tarefa').addEventListener('submit', async fun
             body: JSON.stringify(dados)
         });
         if (response.ok) {
-            location.reload();
+            // Tarefas sem sprint pertencem primeiro ao Backlog. De lá, o
+            // planejamento para uma sprint as leva para a coluna Iniciar.
+            window.location.href = `/projeto/${projectId}/backlog`;
         } else {
             const error = await response.json().catch(() => ({}));
             alert(error.mensagem || 'Erro ao criar a tarefa.');

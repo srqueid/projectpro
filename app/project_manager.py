@@ -689,6 +689,38 @@ def replanejar_tarefa(project_id, card_id):
     return True
 
 
+def planejar_tarefa(project_id, task_id, sprint=None, planejado=True):
+    """Move uma tarefa entre Backlog e a entrada do Kanban conforme a sprint."""
+    sprint = str(sprint or '').strip() or None
+    planejado = bool(planejado) and sprint is not None
+    coluna_kanban_id = 'iniciar' if planejado else 'backlog'
+
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        # Tarefas de projetos com estrutura hierárquica têm UUID; a comparação
+        # textual permite tratar os dois modelos sem converter o ID.
+        cur.execute("""
+            SELECT t.id
+            FROM projeto.tarefas_hierarquicas t
+            JOIN projeto.epicos e ON e.id = t.epico_id
+            WHERE e.projeto_id = %s AND t.id::text = %s
+        """, (project_id, str(task_id)))
+        if cur.fetchone():
+            cur.execute("""
+                UPDATE projeto.tarefas_hierarquicas t
+                SET planejado = %s, sprint = %s, kanban_coluna_id = %s
+                FROM projeto.epicos e
+                WHERE t.epico_id = e.id AND e.projeto_id = %s AND t.id::text = %s
+            """, (planejado, sprint, coluna_kanban_id, project_id, str(task_id)))
+        else:
+            cur.execute("""
+                UPDATE projeto.tarefas
+                SET planejado = %s, sprint = %s, kanban_coluna_id = %s
+                WHERE projeto_id = %s AND id = %s
+            """, (planejado, sprint, coluna_kanban_id, project_id, task_id))
+    db.commit()
+
+
 def mover_card_kanban(project_id, card_id, coluna_destino_id, manter_data=False):
     db = database.get_db()
     from datetime import datetime
@@ -790,6 +822,11 @@ def mover_card_kanban(project_id, card_id, coluna_destino_id, manter_data=False)
     db.commit()
 
 def adicionar_tarefa(project_id, dados):
+    sprint = str(dados.get('sprint') or '').strip() or None
+    planejado = bool(sprint)
+    # A criação sempre começa no Backlog. Quando já há uma sprint informada,
+    # o primeiro estágio operacional é a coluna "Iniciar" do Kanban.
+    kanban_coluna_id = 'iniciar' if planejado else 'backlog'
     db = database.get_db()
     with db.cursor() as cur:
         cur.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM projeto.tarefas WHERE projeto_id = %s", (project_id,))
@@ -799,7 +836,7 @@ def adicionar_tarefa(project_id, dados):
             INSERT INTO projeto.tarefas (id, projeto_id, fase, modulo, tarefa, subtarefa, descricao, dias, predecessora_id, conclusao, responsavel_id, baseline_inicio, baseline_fim, inicio, fim, kanban_coluna_id, parent_id, tipo, criterios_aceite, sprint, planejado)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            (next_id, project_id, dados.get('fase'), dados.get('modulo'), dados.get('tarefa'), dados.get('subtarefa'), dados.get('descricao'), dados.get('dias'), dados.get('predecessora_id'), dados.get('conclusao'), dados.get('responsavel_id'), dados.get('baseline_inicio'), dados.get('baseline_fim'), dados.get('inicio'), dados.get('fim'), dados.get('kanban_coluna_id'), dados.get('parent_id'), dados.get('tipo') or 'task', dados.get('criterios_aceite'), dados.get('sprint'), dados.get('planejado', False))
+            (next_id, project_id, dados.get('fase'), dados.get('modulo'), dados.get('tarefa'), dados.get('subtarefa'), dados.get('descricao'), dados.get('dias'), dados.get('predecessora_id'), dados.get('conclusao'), dados.get('responsavel_id'), dados.get('baseline_inicio'), dados.get('baseline_fim'), dados.get('inicio'), dados.get('fim'), kanban_coluna_id, dados.get('parent_id'), dados.get('tipo') or 'task', dados.get('criterios_aceite'), sprint, planejado)
         )
     db.commit()
 
@@ -1003,7 +1040,7 @@ def criar_projeto_empresa(empresa_id, project_id, nome, descricao=''):
 # =============================================================================
 # HIERARQUIA EM 5 TABELAS (Épico → Feature → História → Tarefa → Subtarefa)
 # =============================================================================
-def carregar_hierarquia_completa(empresa_id, projeto_id):
+def carregar_hierarquia_completa(empresa_id, projeto_id, apenas_backlog=False):
     """
     Carrega a hierarquia completa de um projeto em estrutura aninhada:
     Épicos → Features → Histórias → Tarefas → Subtarefas, respeitando o tenant.
@@ -1028,8 +1065,9 @@ def carregar_hierarquia_completa(empresa_id, projeto_id):
             )
             LEFT JOIN projeto.subtarefas s ON s.tarefa_id = t.id
             WHERE e.empresa_id = %s AND e.projeto_id = %s
+              AND (%s = FALSE OR COALESCE(t.planejado, FALSE) = FALSE)
             ORDER BY e.titulo, f.titulo, h.titulo, t.titulo, s.titulo
-        """, (empresa_id, projeto_id))
+        """, (empresa_id, projeto_id, apenas_backlog))
         rows = cur.fetchall()
 
     # Monta a árvore
@@ -1243,15 +1281,18 @@ def adicionar_tarefa_hierarquica(empresa_id, epico_id, historia_id, titulo, is_e
     """
     if is_extraordinaria:
         historia_id = None
+    sprint = str(sprint or '').strip() or None
+    planejado = bool(sprint)
+    kanban_coluna_id = 'iniciar' if planejado else 'backlog'
     db = database.get_db()
     with db.cursor() as cur:
         cur.execute("""
             INSERT INTO projeto.tarefas_hierarquicas
                 (empresa_id, epico_id, historia_id, is_extraordinaria, titulo, descricao,
-                 responsavel_id, dias, sprint, kanban_coluna_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'backlog') RETURNING id
+                 responsavel_id, dias, sprint, planejado, kanban_coluna_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
         """, (empresa_id, epico_id, historia_id, is_extraordinaria, titulo, descricao,
-              responsavel_id, dias, sprint))
+              responsavel_id, dias, sprint, planejado, kanban_coluna_id))
         novo_id = cur.fetchone()[0]
     db.commit()
     return novo_id

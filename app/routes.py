@@ -141,7 +141,12 @@ def atualizar_descricao_projeto(project_id):
 @main_bp.route('/projeto/<project_id>/backlog')
 def backlog(project_id):
     """Página de backlog - mostra itens não planejados."""
-    tarefas = project_manager.carregar_tarefas(project_id)
+    projeto = project_manager.carregar_projeto_por_id(project_id)
+    empresa_id = projeto.get('empresa_id') if projeto else None
+    tarefas_hierarquicas = []
+    if empresa_id:
+        tarefas_hierarquicas = project_manager.carregar_tarefas_hierarquicas_plano(empresa_id, project_id)
+    tarefas = tarefas_hierarquicas or project_manager.carregar_tarefas(project_id)
     responsaveis = project_manager.carregar_responsaveis()
     
     # Filtra apenas itens não planejados
@@ -315,10 +320,9 @@ def kanban(project_id):
     else:
         tarefas = project_manager.carregar_tarefas(project_id)
 
-    # No modelo hierárquico utilizamos todas as tarefas com contexto de épico;
-    # no legado, apenas as planejadas.
-    if not tarefas_hier:
-        tarefas = [t for t in tarefas if t.get('planejado')]
+    # O Kanban representa a execução: somente tarefas que entraram em uma
+    # sprint são exibidas. Itens sem sprint permanecem na grade de Backlog.
+    tarefas = [t for t in tarefas if t.get('planejado')]
 
     kanban_config = project_manager.carregar_kanban_config(project_id)
     colunas = kanban_config.get('colunas', [])
@@ -507,14 +511,7 @@ def planejar_tarefa(project_id):
     sprint = dados.get('sprint', '')
     planejado = dados.get('planejado', True)
     
-    from . import database
-    db = database.get_db()
-    with db.cursor() as cur:
-        cur.execute(
-            "UPDATE projeto.tarefas SET planejado = %s, sprint = %s WHERE projeto_id = %s AND id = %s",
-            (planejado, sprint if sprint else None, project_id, task_id)
-        )
-    db.commit()
+    project_manager.planejar_tarefa(project_id, task_id, sprint, planejado)
     return jsonify({"status": "sucesso"}), 200
 
 @main_bp.route('/projeto/<project_id>/tarefa/<task_pk_id>/adicionar_comentario', methods=['POST'])
@@ -632,7 +629,7 @@ def hierarquia_backlog(empresa_id, project_id):
     empresa = project_manager.obter_empresa_por_id(empresa_id)
     if not empresa:
         return redirect(url_for('main.empresas'))
-    hierarquia = project_manager.carregar_hierarquia_completa(empresa_id, project_id)
+    hierarquia = project_manager.carregar_hierarquia_completa(empresa_id, project_id, apenas_backlog=True)
     responsaveis = project_manager.carregar_responsaveis()
     # Mapa de responsáveis para exibir nomes
     mapa_resp = {str(r['id']): r['nome'] for r in responsaveis}

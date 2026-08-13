@@ -132,7 +132,35 @@ class TestProjectManager(unittest.TestCase):
             if 'INSERT INTO projeto.tarefas_hierarquicas' in call.args[0]
         )
         self.assertIn('kanban_coluna_id', insert_call.args[0])
-        self.assertIn("'backlog'", insert_call.args[0])
+        self.assertEqual(insert_call.args[1][-1], 'backlog')
+        self.assertFalse(insert_call.args[1][-2])
+
+    def test_tarefa_com_sprint_e_criada_em_iniciar(self):
+        """Informar uma sprint já coloca a nova tarefa na entrada do Kanban."""
+        self.mock_cur.fetchone.return_value = (1,)
+        project_manager.adicionar_tarefa('projeto-1', {
+            'tarefa': 'Implementar login', 'sprint': 'Sprint 1'
+        })
+
+        insert_call = next(
+            call for call in self.mock_cur.execute.call_args_list
+            if 'INSERT INTO projeto.tarefas ' in call.args[0]
+        )
+        valores = insert_call.args[1]
+        self.assertEqual(valores[15], 'iniciar')
+        self.assertEqual(valores[-2], 'Sprint 1')
+        self.assertTrue(valores[-1])
+
+    def test_planejar_tarefa_move_para_iniciar(self):
+        """Planejar uma tarefa a remove do Backlog e a envia para Iniciar."""
+        self.mock_cur.fetchone.return_value = None
+        project_manager.planejar_tarefa('projeto-1', 12, 'Sprint 1')
+
+        update_call = next(
+            call for call in self.mock_cur.execute.call_args_list
+            if 'UPDATE projeto.tarefas' in call.args[0]
+        )
+        self.assertEqual(update_call.args[1], (True, 'Sprint 1', 'iniciar', 'projeto-1', 12))
 
     def test_plano_hierarquico_exibe_tarefa_e_subtarefa_no_backlog(self):
         """Itens sem coluna antiga recebem Backlog; subtarefas viram cards."""

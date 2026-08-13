@@ -79,12 +79,12 @@
                 <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
                     <span>📊 {{ t.conclusao or 0 }}%</span>
                     <span class="font-mono">#{{ t.id }}</span>
-                    {% if t.planejado %}
-                    <button onclick="desplanejar({{ t.id }})" class="text-amber-600 hover:text-amber-800 font-medium px-2 py-1 hover:bg-amber-50 rounded transition-all whitespace-nowrap" title="Remover do planejamento">
+                    {% if (t.tipo or 'task') != 'subtask' and t.planejado %}
+                    <button onclick='desplanejar({{ t.id|tojson }})' class="text-amber-600 hover:text-amber-800 font-medium px-2 py-1 hover:bg-amber-50 rounded transition-all whitespace-nowrap" title="Remover do planejamento">
                         Mover para Backlog
                     </button>
-                    {% else %}
-                    <button onclick="planejar({{ t.id }})" class="text-blue-600 hover:text-blue-800 font-medium px-2 py-1 hover:bg-blue-50 rounded transition-all whitespace-nowrap" title="Planejar para um sprint">
+                    {% elif (t.tipo or 'task') != 'subtask' %}
+                    <button onclick='planejar({{ t.id|tojson }})' class="text-blue-600 hover:text-blue-800 font-medium px-2 py-1 hover:bg-blue-50 rounded transition-all whitespace-nowrap" title="Planejar para um sprint">
                         Planejar ➔
                     </button>
                     {% endif %}
@@ -171,7 +171,7 @@
             <div>
                 <label class="block text-sm font-medium text-slate-700">Sprint</label>
                 <input type="text" id="sprint-planejar" class="mt-1 w-full input-field" placeholder="Ex: Sprint 1" required>
-                <p class="text-xs text-slate-500 mt-1">Defina o sprint para este item. Itens planejados aparecerão no Kanban.</p>
+                <p class="text-xs text-slate-500 mt-1">Defina o sprint para este item. Ele será enviado para a coluna Iniciar do Kanban.</p>
             </div>
         </div>
         <div class="modal-footer">
@@ -245,4 +245,3 @@ function filtrarBacklog() {
 }
 </script>
 {% endblock %}
-
