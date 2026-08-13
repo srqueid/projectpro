@@ -121,6 +121,63 @@ class TestProjectManager(unittest.TestCase):
         )
         self.mock_conn.commit.assert_called_once()
 
+    def test_tarefa_hierarquica_e_criada_no_backlog(self):
+        """Tarefas criadas pela Estrutura já têm uma coluna visível no Kanban."""
+        project_manager.adicionar_tarefa_hierarquica(
+            'empresa-1', 'epico-1', 'historia-1', 'Implementar login'
+        )
+
+        insert_call = next(
+            call for call in self.mock_cur.execute.call_args_list
+            if 'INSERT INTO projeto.tarefas_hierarquicas' in call.args[0]
+        )
+        self.assertIn('kanban_coluna_id', insert_call.args[0])
+        self.assertIn("'backlog'", insert_call.args[0])
+
+    def test_plano_hierarquico_exibe_tarefa_e_subtarefa_no_backlog(self):
+        """Itens sem coluna antiga recebem Backlog; subtarefas viram cards."""
+        self.mock_cur.fetchall.return_value = [{
+            'epico_id': 'epico-1', 'epico_titulo': 'Produto',
+            'feature_id': 'feature-1', 'feature_titulo': 'Acesso',
+            'historia_id': 'historia-1', 'historia_titulo': 'Entrar',
+            'tarefa_id': 'tarefa-1', 'tarefa_titulo': 'Criar tela',
+            'is_extraordinaria': False, 'descricao': None, 'dias': 1,
+            'conclusao': 0, 'responsavel_id': None, 'baseline_inicio': None,
+            'baseline_fim': None, 'inicio': None, 'fim': None,
+            'kanban_coluna_id': None, 'sprint': None, 'planejado': False,
+            'predecessora_id': None, 'tarefa_status': 'A_FAZER',
+            'subtarefa_id': 'subtarefa-1', 'subtarefa_titulo': 'Montar formulário',
+            'concluida': False,
+        }]
+
+        with patch('app.project_manager.carregar_responsaveis', return_value=[]):
+            itens = project_manager.carregar_tarefas_hierarquicas_plano('empresa-1', 'projeto-1')
+
+        self.assertEqual(len(itens), 2)
+        tarefa, subtarefa = itens
+        self.assertEqual(tarefa['kanban_coluna_id'], 'backlog')
+        self.assertEqual(subtarefa['tipo'], 'subtask')
+        self.assertEqual(subtarefa['subtarefa'], 'Montar formulário')
+        self.assertEqual(subtarefa['kanban_coluna_id'], 'backlog')
+        self.assertFalse(subtarefa['kanban_movel'])
+
+    def test_mover_tarefa_hierarquica_atualiza_a_tabela_correta(self):
+        """Mover um card hierárquico não deve tentar gravar na tabela legada."""
+        self.mock_cur.fetchone.side_effect = [
+            {'kanban_coluna_id': 'backlog', 'inicio': None},
+            {'tipo': 'meio', 'progresso_padrao': 50},
+            {'tipo': 'backlog'},
+        ]
+
+        project_manager.mover_card_kanban('projeto-1', 'tarefa-uuid', 'andamento')
+
+        comandos = [call.args[0] for call in self.mock_cur.execute.call_args_list]
+        self.assertTrue(any('UPDATE projeto.tarefas_hierarquicas' in comando for comando in comandos))
+        self.assertFalse(any(
+            'UPDATE projeto.tarefas SET' in comando
+            for comando in comandos
+        ))
+
 
 class TestConversaoTipoAlcada(unittest.TestCase):
     """Testes para a matriz de promoção/rebaixamento com alçada por perfil."""

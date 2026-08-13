@@ -693,13 +693,40 @@ def mover_card_kanban(project_id, card_id, coluna_destino_id, manter_data=False)
     db = database.get_db()
     from datetime import datetime
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        # Projetos com a estrutura hierárquica não usam a tabela legada de
+        # tarefas. Localizamos primeiro esse tipo de card para persistir o
+        # movimento no mesmo modelo que o Kanban está exibindo.
+        cur.execute("""
+            SELECT t.kanban_coluna_id, t.inicio
+            FROM projeto.tarefas_hierarquicas t
+            JOIN projeto.epicos e ON e.id = t.epico_id
+            WHERE e.projeto_id = %s AND t.id::text = %s
+        """, (project_id, str(card_id)))
+        tarefa_atual = cur.fetchone()
+        tarefa_hierarquica = tarefa_atual is not None
+
+        if not tarefa_hierarquica:
+            cur.execute(
+                "SELECT kanban_coluna_id, inicio FROM projeto.tarefas WHERE projeto_id = %s AND id = %s",
+                (project_id, card_id)
+            )
+            tarefa_atual = cur.fetchone()
+
         # Carrega a coluna de destino para obter seu tipo e progresso padrão
         cur.execute("SELECT tipo, progresso_padrao FROM projeto.kanban_colunas WHERE projeto_id = %s AND coluna_id = %s", (project_id, coluna_destino_id))
         col_dest = cur.fetchone()
         
         if not col_dest:
             # Se a coluna não for encontrada, apenas atualiza a coluna da tarefa sem outras ações.
-            cur.execute("UPDATE projeto.tarefas SET kanban_coluna_id = %s WHERE projeto_id = %s AND id = %s", (coluna_destino_id, project_id, card_id))
+            if tarefa_hierarquica:
+                cur.execute("""
+                    UPDATE projeto.tarefas_hierarquicas t
+                    SET kanban_coluna_id = %s
+                    FROM projeto.epicos e
+                    WHERE t.epico_id = e.id AND e.projeto_id = %s AND t.id::text = %s
+                """, (coluna_destino_id, project_id, str(card_id)))
+            else:
+                cur.execute("UPDATE projeto.tarefas SET kanban_coluna_id = %s WHERE projeto_id = %s AND id = %s", (coluna_destino_id, project_id, card_id))
             db.commit()
             return
 
@@ -707,8 +734,6 @@ def mover_card_kanban(project_id, card_id, coluna_destino_id, manter_data=False)
         progresso_padrao = col_dest['progresso_padrao']
 
         # Carrega dados atuais da tarefa e da coluna de origem
-        cur.execute("SELECT kanban_coluna_id, inicio FROM projeto.tarefas WHERE projeto_id = %s AND id = %s", (project_id, card_id))
-        tarefa_atual = cur.fetchone()
         coluna_origem_id = tarefa_atual['kanban_coluna_id'] if tarefa_atual else None
         inicio_existente = tarefa_atual['inicio'] if tarefa_atual else None
 
@@ -744,12 +769,20 @@ def mover_card_kanban(project_id, card_id, coluna_destino_id, manter_data=False)
             update_fields['conclusao'] = progresso_padrao
 
         set_clauses = [f"{key} = %s" for key in update_fields.keys()]
-        params = list(update_fields.values()) + [int(card_id), project_id]
-        
-        cur.execute(f"UPDATE projeto.tarefas SET {', '.join(set_clauses)} WHERE id = %s AND projeto_id = %s", params)
+        if tarefa_hierarquica:
+            params = list(update_fields.values()) + [project_id, str(card_id)]
+            cur.execute(f"""
+                UPDATE projeto.tarefas_hierarquicas t
+                SET {', '.join(set_clauses)}
+                FROM projeto.epicos e
+                WHERE t.epico_id = e.id AND e.projeto_id = %s AND t.id::text = %s
+            """, params)
+        else:
+            params = list(update_fields.values()) + [int(card_id), project_id]
+            cur.execute(f"UPDATE projeto.tarefas SET {', '.join(set_clauses)} WHERE id = %s AND projeto_id = %s", params)
 
         # RN016: Se a tarefa foi concluída, recalcular o projeto para adiantar sucessoras
-        if tipo_dest == 'fim':
+        if tipo_dest == 'fim' and not tarefa_hierarquica:
             tarefas_atuais = carregar_tarefas(project_id)
             tarefas_recalculadas = recalcular_datas_cascata(tarefas_atuais)
             salvar_tarefas_recalculadas(project_id, tarefas_recalculadas)
@@ -786,6 +819,44 @@ def editar_tarefa(project_id, task_id, dados):
 
     db = database.get_db()
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        # No modelo hierárquico o título da tarefa é armazenado como
+        # ``titulo``. Atualizá-la aqui mantém a edição do card funcional sem
+        # criar uma cópia na tabela legada.
+        cur.execute("""
+            SELECT t.*
+            FROM projeto.tarefas_hierarquicas t
+            JOIN projeto.epicos e ON e.id = t.epico_id
+            WHERE e.projeto_id = %s AND t.id::text = %s
+        """, (project_id, str(task_id)))
+        tarefa_hierarquica = cur.fetchone()
+        if tarefa_hierarquica:
+            tarefa_antiga = dict(tarefa_hierarquica)
+            campos = {
+                'tarefa': 'titulo',
+                'descricao': 'descricao',
+                'responsavel_id': 'responsavel_id',
+                'inicio': 'inicio',
+                'fim': 'fim',
+                'dias': 'dias',
+                'conclusao': 'conclusao',
+            }
+            update_fields = {
+                coluna: dados[chave]
+                for chave, coluna in campos.items()
+                if chave in dados and str(tarefa_antiga.get(coluna) or '') != str(dados[chave] or '')
+            }
+            if update_fields:
+                set_clauses = [f"{key} = %s" for key in update_fields]
+                params = list(update_fields.values()) + [project_id, str(task_id)]
+                cur.execute(f"""
+                    UPDATE projeto.tarefas_hierarquicas t
+                    SET {', '.join(set_clauses)}
+                    FROM projeto.epicos e
+                    WHERE t.epico_id = e.id AND e.projeto_id = %s AND t.id::text = %s
+                """, params)
+            db.commit()
+            return
+
         # Carrega a tarefa atual para comparar as mudanças
         cur.execute("SELECT * FROM projeto.tarefas WHERE projeto_id = %s AND id = %s", (project_id, task_id))
         tarefa_antiga = dict(cur.fetchone())
@@ -951,7 +1022,10 @@ def carregar_hierarquia_completa(empresa_id, projeto_id):
             FROM projeto.epicos e
             LEFT JOIN projeto.features f ON f.epico_id = e.id
             LEFT JOIN projeto.historias h ON h.feature_id = f.id
-            LEFT JOIN projeto.tarefas_hierarquicas t ON t.historia_id = h.id
+            LEFT JOIN projeto.tarefas_hierarquicas t ON (
+                t.historia_id = h.id
+                OR (t.historia_id IS NULL AND t.is_extraordinaria = TRUE AND t.epico_id = e.id)
+            )
             LEFT JOIN projeto.subtarefas s ON s.tarefa_id = t.id
             WHERE e.empresa_id = %s AND e.projeto_id = %s
             ORDER BY e.titulo, f.titulo, h.titulo, t.titulo, s.titulo
@@ -1029,7 +1103,10 @@ def carregar_tarefas_hierarquicas_plano(empresa_id, projeto_id):
             FROM projeto.epicos e
             LEFT JOIN projeto.features f ON f.epico_id = e.id
             LEFT JOIN projeto.historias h ON h.feature_id = f.id
-            LEFT JOIN projeto.tarefas_hierarquicas t ON t.historia_id = h.id
+            LEFT JOIN projeto.tarefas_hierarquicas t ON (
+                t.historia_id = h.id
+                OR (t.historia_id IS NULL AND t.is_extraordinaria = TRUE AND t.epico_id = e.id)
+            )
             LEFT JOIN projeto.subtarefas s ON s.tarefa_id = t.id
             WHERE e.empresa_id = %s AND e.projeto_id = %s
             ORDER BY e.titulo, f.titulo, h.titulo, t.titulo, s.titulo
@@ -1040,10 +1117,12 @@ def carregar_tarefas_hierarquicas_plano(empresa_id, projeto_id):
     mapa_resp = {str(r['id']): r['nome'] for r in carregar_responsaveis()}
 
     tarefas_map = {}
+    subtarefas_map = {}
     for r in rows:
         if not r['tarefa_id']:
             continue
         tid = str(r['tarefa_id'])
+        coluna_kanban = r['kanban_coluna_id'] or 'backlog'
         if tid not in tarefas_map:
             tarefas_map[tid] = {
                 'id': r['tarefa_id'],
@@ -1063,7 +1142,9 @@ def carregar_tarefas_hierarquicas_plano(empresa_id, projeto_id):
                 'baseline_fim': r['baseline_fim'],
                 'inicio': r['inicio'],
                 'fim': r['fim'],
-                'kanban_coluna_id': r['kanban_coluna_id'],
+                # O fallback recupera itens existentes que foram criados antes
+                # de a coluna inicial do Kanban ser definida.
+                'kanban_coluna_id': coluna_kanban,
                 'sprint': r['sprint'],
                 'planejado': r['planejado'],
                 'predecessora_id': r['predecessora_id'],
@@ -1075,6 +1156,8 @@ def carregar_tarefas_hierarquicas_plano(empresa_id, projeto_id):
                 'historia_id': r['historia_id'],
                 'historia_titulo': r['historia_titulo'],
                 'subtarefas': [],
+                'kanban_movel': True,
+                'kanban_editavel': True,
             }
         if r['subtarefa_id']:
             tarefas_map[tid]['subtarefas'].append({
@@ -1083,7 +1166,39 @@ def carregar_tarefas_hierarquicas_plano(empresa_id, projeto_id):
                 'concluida': r['concluida'],
             })
 
-    return list(tarefas_map.values())
+            # Subtarefas também precisam de um card no Kanban. Elas acompanham
+            # a coluna da tarefa pai até que tenham um fluxo independente.
+            sid = str(r['subtarefa_id'])
+            if sid not in subtarefas_map:
+                subtarefas_map[sid] = {
+                    'id': r['subtarefa_id'],
+                    'tipo': 'subtask',
+                    'titulo': r['subtarefa_titulo'],
+                    'tarefa': None,
+                    'subtarefa': r['subtarefa_titulo'],
+                    'parent_id': r['tarefa_id'],
+                    'parent_tarefa': r['tarefa_titulo'],
+                    'fase': None,
+                    'modulo': None,
+                    'descricao': None,
+                    'dias': 0,
+                    'conclusao': 100 if r['concluida'] else 0,
+                    'responsavel_id': r['responsavel_id'],
+                    'responsavel_nome': mapa_resp.get(str(r['responsavel_id'])) if r['responsavel_id'] else None,
+                    'baseline_inicio': None,
+                    'baseline_fim': None,
+                    'inicio': None,
+                    'fim': None,
+                    'kanban_coluna_id': coluna_kanban,
+                    'sprint': r['sprint'],
+                    'planejado': r['planejado'],
+                    'predecessora_id': None,
+                    'status': 'CONCLUIDA' if r['concluida'] else 'A_FAZER',
+                    'kanban_movel': False,
+                    'kanban_editavel': False,
+                }
+
+    return list(tarefas_map.values()) + list(subtarefas_map.values())
 
 
 def adicionar_epico(empresa_id, projeto_id, titulo, descricao=None):
@@ -1133,8 +1248,8 @@ def adicionar_tarefa_hierarquica(empresa_id, epico_id, historia_id, titulo, is_e
         cur.execute("""
             INSERT INTO projeto.tarefas_hierarquicas
                 (empresa_id, epico_id, historia_id, is_extraordinaria, titulo, descricao,
-                 responsavel_id, dias, sprint)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                 responsavel_id, dias, sprint, kanban_coluna_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'backlog') RETURNING id
         """, (empresa_id, epico_id, historia_id, is_extraordinaria, titulo, descricao,
               responsavel_id, dias, sprint))
         novo_id = cur.fetchone()[0]

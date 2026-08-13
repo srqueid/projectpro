@@ -125,6 +125,7 @@ document.addEventListener('DOMContentLoaded', function() {
     colunas.forEach(coluna => {
         new Sortable(coluna, {
             group: 'kanban',
+            draggable: '.kanban-card[draggable="true"]',
             animation: 150,
             ghostClass: 'sortable-ghost',
             chosenClass: 'sortable-chosen',
@@ -221,7 +222,7 @@ function abrirModalEditarTarefa(event, taskId) {
     form.querySelector('#dias-tarefa-edicao').value = task.dias || '';
     form.querySelector('#descricao-tarefa-edicao').value = task.descricao || '';
     form.querySelector('#conclusao-tarefa-edicao').value = task.conclusao || 0;
-    form.dataset.pkId = task.pk_id; // Armazena o PK_ID para o form de comentário
+    form.dataset.pkId = task.pk_id || ''; // Só tarefas legadas possuem atividades/comentários
 
     // Popula a lista de atividades/comentários
     const listaAtividades = document.getElementById('lista-atividades');

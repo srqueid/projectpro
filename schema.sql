@@ -249,7 +249,7 @@ CREATE TABLE IF NOT EXISTS projeto.tarefas_hierarquicas (
     baseline_fim DATE,
     inicio DATE,
     fim DATE,
-    kanban_coluna_id VARCHAR(255),
+    kanban_coluna_id VARCHAR(255) DEFAULT 'backlog',
     sprint VARCHAR(100),
     planejado BOOLEAN DEFAULT FALSE,
     predecessora_id UUID,

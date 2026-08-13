@@ -597,7 +597,7 @@ def executar_migracoes():
                     baseline_fim DATE,
                     inicio DATE,
                     fim DATE,
-                    kanban_coluna_id VARCHAR(255),
+                    kanban_coluna_id VARCHAR(255) DEFAULT 'backlog',
                     sprint VARCHAR(100),
                     planejado BOOLEAN DEFAULT FALSE,
                     predecessora_id UUID,
@@ -625,6 +625,18 @@ def executar_migracoes():
                 cur.execute(ddl)
                 print(f"[MIGRAÇÃO] Tabela 'projeto.{nome}' criada.")
                 migracoes_aplicadas += 1
+
+        # Migração 016: tarefas da estrutura hierárquica devem nascer em uma
+        # coluna visível do Kanban; itens antigos sem coluna voltam ao Backlog.
+        cur.execute("""
+            ALTER TABLE projeto.tarefas_hierarquicas
+            ALTER COLUMN kanban_coluna_id SET DEFAULT 'backlog'
+        """)
+        cur.execute("""
+            UPDATE projeto.tarefas_hierarquicas
+            SET kanban_coluna_id = 'backlog'
+            WHERE kanban_coluna_id IS NULL
+        """)
 
         # FK de empresa_id nas tabelas existentes (idempotente)
         for tabela in ['projetos', 'responsaveis', 'times']:

@@ -54,9 +54,12 @@
                 </div>
                 <div class="kanban-column-body" data-col-id="{{ col.coluna_id }}">
                     {% for t in cards_por_coluna[col.coluna_id] %}
-                    <div class="kanban-card {{ 'kanban-card-bloqueado' if t.bloqueada_por else '' }} {{ 'kanban-card-atrasado' if t.em_atraso else '' }}" data-id="{{ t.id }}" draggable="true" onclick="abrirModalEditarTarefa(event, '{{ t.id }}')">
+                    <div class="kanban-card {{ 'kanban-card-bloqueado' if t.bloqueada_por else '' }} {{ 'kanban-card-atrasado' if t.em_atraso else '' }}" data-id="{{ t.id }}" data-item-type="{{ t.tipo or 'task' }}" draggable="{{ 'true' if t.kanban_movel|default(true) else 'false' }}"{% if t.kanban_editavel|default(true) %} onclick="abrirModalEditarTarefa(event, '{{ t.id }}')"{% endif %}>
                         <span class="card-id">#{{ t.id }}</span>
                         <div class="card-title">{{ t.tarefa or t.subtarefa or 'Sem nome' }}</div>
+                        {% if t.parent_tarefa %}
+                        <div class="card-sub">Subtarefa de: {{ t.parent_tarefa }}</div>
+                        {% endif %}
                         {% if t.fase or t.modulo %}
                         <div class="card-sub">{{ t.fase or '' }}{% if t.fase and t.modulo %} / {% endif %}{{ t.modulo or '' }}</div>
                         {% endif %}
