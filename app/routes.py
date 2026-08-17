@@ -81,7 +81,7 @@ def detalhes_projeto(project_id):
 
     return render_template('detalhes_projeto.html', project_id=project_id, projeto=projeto, 
                           epics=epics, features=features, stories=stories, tasks=tasks, subtasks=subtasks,
-                          stats=stats, responsaveis=responsaveis, arvore=arvore, page='detalhes')
+                          stats=stats, responsaveis=responsaveis, arvore=arvore, page='detalhes', tarefas=tarefas)
 
 
 def _montar_arvore_hierarquica(tarefas):
@@ -279,12 +279,11 @@ def excluir_feriado():
 
 @main_bp.route('/projeto/<project_id>/planilha')
 def planilha(project_id):
-    tarefas = project_manager.carregar_tarefas(project_id)
+    tarefas = project_manager.carregar_tarefas_planilha(project_id)
     stats = project_manager.calcular_stats(tarefas)
     responsaveis = project_manager.carregar_responsaveis()
     times = project_manager.carregar_times()
     projeto = project_manager.carregar_projeto_por_id(project_id)
-    # Carrega a config Kanban para identificar a coluna "Em Andamento" (tipo 'meio')
     kanban_config = project_manager.carregar_kanban_config(project_id)
     coluna_andamento_id = ''
     for col in kanban_config.get('colunas', []):
@@ -292,13 +291,50 @@ def planilha(project_id):
             coluna_andamento_id = col['coluna_id']
             break
     perfis = project_manager.carregar_perfis()
-    return render_template('planilha.html', tarefas=tarefas, page='planilha', project_id=project_id, stats=stats, responsaveis=responsaveis, times=times, projeto=projeto, coluna_andamento_id=coluna_andamento_id, perfis=perfis)
+    config_planilha = project_manager.carregar_config_planilha(project_id)
+    return render_template('planilha.html', tarefas=tarefas, page='planilha', project_id=project_id, stats=stats, responsaveis=responsaveis, times=times, projeto=projeto, coluna_andamento_id=coluna_andamento_id, perfis=perfis, config_planilha=config_planilha)
 
 @main_bp.route('/projeto/<project_id>/associar_time', methods=['POST'])
 def associar_time_projeto(project_id):
     time_id = request.form.get('time_id')
     project_manager.associar_time_projeto(project_id, time_id)
     return redirect(url_for('main.planilha', project_id=project_id))
+
+
+@main_bp.route('/projeto/<project_id>/planilha/config/colunas', methods=['GET', 'POST'])
+def planilha_config_colunas(project_id):
+    if request.method == 'POST':
+        dados = request.get_json()
+        project_manager.salvar_config_colunas_planilha(project_id, dados.get('colunas', []))
+        return jsonify({'status': 'sucesso'})
+    config = project_manager.carregar_config_planilha(project_id)
+    return jsonify(config)
+
+
+@main_bp.route('/projeto/<project_id>/planilha/config/campos', methods=['GET', 'POST'])
+def planilha_config_campos(project_id):
+    if request.method == 'POST':
+        dados = request.get_json()
+        project_manager.salvar_campos_custom(project_id, dados.get('campos', []))
+        return jsonify({'status': 'sucesso'})
+    config = project_manager.carregar_config_planilha(project_id)
+    return jsonify({'campos': config['campos']})
+
+
+@main_bp.route('/projeto/<project_id>/planilha/config/epicos', methods=['POST'])
+def planilha_config_epicos(project_id):
+    dados = request.get_json()
+    project_manager.salvar_epicos_planilha(project_id, dados.get('epicos', []))
+    return jsonify({'status': 'sucesso'})
+
+
+@main_bp.route('/projeto/<project_id>/planilha/valores_custom', methods=['POST'])
+def planilha_salvar_valores_custom(project_id):
+    dados = request.get_json()
+    for item in dados.get('valores', []):
+        project_manager.salvar_valores_custom(project_id, item['tarefa_id'], item.get('valores', {}))
+    return jsonify({'status': 'sucesso'})
+
 
 @main_bp.route('/projeto/<project_id>/kanban')
 def kanban(project_id):
@@ -420,6 +456,9 @@ def salvar_lote(project_id):
         if novos_dados:
             dados_calculados = project_manager.recalcular_datas_cascata(novos_dados)
             project_manager.salvar_tarefas(project_id, dados_calculados)
+            valores_custom = novos_dados.get('valores_custom', [])
+            for item in valores_custom:
+                project_manager.salvar_valores_custom(project_id, item['tarefa_id'], item.get('valores', {}))
             return jsonify({"status": "sucesso"}), 200
         return jsonify({"status": "erro", "mensagem": "Nenhum dado recebido"}), 400
     except Exception as e:
@@ -494,6 +533,44 @@ def converter_tipo(project_id):
         resultado = project_manager.converter_tipo_tarefa(
             project_id, task_id, direcao, responsavel_id=responsavel_id
         )
+        return jsonify(resultado), 200
+    except PermissionError as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 403
+    except ValueError as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 400
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+@main_bp.route('/projeto/<project_id>/reassociar_item', methods=['POST'])
+def reassociar_item(project_id):
+    """Reassocia um item a um novo pai na hierarquia (Modelo A - legacy)."""
+    dados = request.get_json()
+    task_id = dados.get('task_id')
+    novo_parent_id = dados.get('novo_parent_id')
+    responsavel_id = dados.get('responsavel_id')
+    if not task_id:
+        return jsonify({"status": "erro", "mensagem": "task_id é obrigatório."}), 400
+    try:
+        project_manager.reassociar_item(project_id, task_id, novo_parent_id, responsavel_id)
+        return jsonify({"status": "sucesso"}), 200
+    except ValueError as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 400
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+@main_bp.route('/projeto/<project_id>/converter_tipo_especifico', methods=['POST'])
+def converter_tipo_especifico(project_id):
+    """Converte um item para um tipo específico na hierarquia, validando alçada."""
+    dados = request.get_json()
+    task_id = dados.get('task_id')
+    novo_tipo = dados.get('novo_tipo')
+    responsavel_id = dados.get('responsavel_id')
+    if not task_id or not novo_tipo:
+        return jsonify({"status": "erro", "mensagem": "task_id e novo_tipo são obrigatórios."}), 400
+    try:
+        resultado = project_manager.converter_tipo_especifico(project_id, task_id, novo_tipo, responsavel_id)
         return jsonify(resultado), 200
     except PermissionError as e:
         return jsonify({"status": "erro", "mensagem": str(e)}), 403

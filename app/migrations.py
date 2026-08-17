@@ -16,7 +16,8 @@ def _schema_de_tabela(tabela):
     if tabela in ('responsaveis', 'ferias', 'times', 'responsaveis_times'):
         return config.SCHEMA_RH
     if tabela in ('projetos', 'tarefas', 'kanban_colunas', 'tarefa_atividades', 'projeto_configuracoes',
-                  'epicos', 'features', 'historias', 'tarefas_hierarquicas', 'subtarefas'):
+                  'epicos', 'features', 'historias', 'tarefas_hierarquicas', 'subtarefas',
+                  'planilha_colunas_config', 'planilha_campos_custom', 'planilha_epicos', 'planilha_valores_custom'):
         return config.SCHEMA_PROJETO
     if tabela in ('configuracoes', 'feriados_customizados'):
         return config.SCHEMA_CONFIG
@@ -44,6 +45,16 @@ def _adicionar_coluna(cur, tabela, coluna, tipo):
         tabela_qualificada = f"{schema}.{tabela}"
         cur.execute(f"ALTER TABLE {tabela_qualificada} ADD COLUMN {coluna} {tipo};")
         print(f"[MIGRAÇÃO] Coluna '{coluna}' adicionada à tabela '{tabela_qualificada}'.")
+        return True
+    return False
+
+
+def _criar_tabela_se_nao_existe(cur, tabela, ddl):
+    """Cria uma tabela se ela não existir."""
+    if not _tabela_existe(cur, tabela):
+        schema = _schema_de_tabela(tabela)
+        cur.execute(f"CREATE TABLE IF NOT EXISTS {schema}.{tabela} ({ddl});")
+        print(f"[MIGRAÇÃO] Tabela '{schema}.{tabela}' criada.")
         return True
     return False
 
@@ -677,6 +688,46 @@ def executar_migracoes():
         # Migração 015: Migração para o novo Work Item Engine
         # ---------------------------------------------------------------
         _migrar_para_work_items(cur)
+
+        # ---------------------------------------------------------------
+        # Migração 018: Criar tabelas de configuração da planilha
+        # ---------------------------------------------------------------
+        if _criar_tabela_se_nao_existe(cur, 'planilha_colunas_config', """
+            id SERIAL PRIMARY KEY,
+            projeto_id VARCHAR(255) NOT NULL REFERENCES projeto.projetos(id) ON DELETE CASCADE,
+            coluna_id VARCHAR(100) NOT NULL,
+            visivel BOOLEAN DEFAULT TRUE,
+            ordem INTEGER DEFAULT 0,
+            UNIQUE(projeto_id, coluna_id)
+        """):
+            migracoes_aplicadas += 1
+
+        if _criar_tabela_se_nao_existe(cur, 'planilha_campos_custom', """
+            id SERIAL PRIMARY KEY,
+            projeto_id VARCHAR(255) NOT NULL REFERENCES projeto.projetos(id) ON DELETE CASCADE,
+            nome VARCHAR(255) NOT NULL,
+            tipo VARCHAR(50) NOT NULL CHECK (tipo IN ('texto', 'data', 'numerico', 'texto_longo')),
+            ordem INTEGER DEFAULT 0,
+            UNIQUE(projeto_id, nome)
+        """):
+            migracoes_aplicadas += 1
+
+        if _criar_tabela_se_nao_existe(cur, 'planilha_epicos', """
+            projeto_id VARCHAR(255) NOT NULL REFERENCES projeto.projetos(id) ON DELETE CASCADE,
+            tarefa_pk_id INTEGER NOT NULL REFERENCES projeto.tarefas(pk_id) ON DELETE CASCADE,
+            PRIMARY KEY (projeto_id, tarefa_pk_id)
+        """):
+            migracoes_aplicadas += 1
+
+        if _criar_tabela_se_nao_existe(cur, 'planilha_valores_custom', """
+            tarefa_pk_id INTEGER NOT NULL REFERENCES projeto.tarefas(pk_id) ON DELETE CASCADE,
+            campo_id INTEGER NOT NULL REFERENCES projeto.planilha_campos_custom(id) ON DELETE CASCADE,
+            valor_texto TEXT,
+            valor_data DATE,
+            valor_numerico NUMERIC,
+            PRIMARY KEY (tarefa_pk_id, campo_id)
+        """):
+            migracoes_aplicadas += 1
 
     db.commit()
 

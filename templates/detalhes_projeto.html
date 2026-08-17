@@ -70,6 +70,8 @@
                 {% endif %}
             </div>
             <div class="flex items-center gap-0.5 ml-1">
+                <button type="button" onclick="abrirModalReassociar({{ item.id }}, '{{ tipo_atual }}')" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-indigo-600 text-sm" title="Reassociar (trocar de pai)">🔗</button>
+                <button type="button" onclick="abrirModalConverter({{ item.id }}, '{{ tipo_atual }}')" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-emerald-600 text-sm" title="Converter tipo">🔄</button>
                 <button type="button" onclick="promoverItem({{ item.id }})" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-indigo-600 text-sm" title="Promover (subir um nível)">▲</button>
                 <button type="button" onclick="rebaixarItem({{ item.id }})" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-amber-600 text-sm" title="Rebaixar (descer um nível)">▼</button>
                 <button type="button" onclick="excluirItem({{ item.id }})" class="w-6 h-6 flex items-center justify-center text-gray-300 hover:text-red-500 text-sm" title="Excluir">✕</button>
@@ -166,6 +168,70 @@
 
     </div>
 </div>
+
+<!-- Modal para Reassociar Item -->
+<dialog id="modal-reassociar-item" class="modal-config" aria-label="Reassociar Item">
+    <div class="modal-header">
+        <h3>Reassociar Item</h3>
+        <button type="button" onclick="fecharModal('modal-reassociar-item')" class="modal-close" aria-label="Fechar">&times;</button>
+    </div>
+    <form id="form-reassociar-item" method="POST">
+        <input type="hidden" id="reassociar-task-id">
+        <div class="modal-body space-y-4">
+            <p class="text-sm text-slate-600">Selecione o novo pai para o item <strong id="reassociar-item-nome"></strong>.</p>
+            <div>
+                <label class="block text-sm font-medium text-slate-700">Novo Pai</label>
+                <select id="reassociar-novo-parent" class="mt-1 w-full input-field">
+                    <option value="">Nenhum (tornar raiz)</option>
+                    {% for e in epics %}
+                    <option value="{{ e.id }}" data-tipo="{{ e.tipo or 'task' }}">[Épico] {{ e.tarefa or e.subtarefa or '#' ~ e.id }}</option>
+                    {% endfor %}
+                    {% for f in features %}
+                    <option value="{{ f.id }}" data-tipo="{{ f.tipo or 'task' }}">[Feature] {{ f.tarefa or f.subtarefa or '#' ~ f.id }}</option>
+                    {% endfor %}
+                    {% for s in stories %}
+                    <option value="{{ s.id }}" data-tipo="{{ s.tipo or 'task' }}">[História] {{ s.tarefa or s.subtarefa or '#' ~ s.id }}</option>
+                    {% endfor %}
+                    {% for t in tasks %}
+                    <option value="{{ t.id }}" data-tipo="{{ t.tipo or 'task' }}">[Tarefa] {{ t.tarefa or t.subtarefa or '#' ~ t.id }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" onclick="fecharModal('modal-reassociar-item')" class="btn-secondary">Cancelar</button>
+            <button type="submit" class="btn-primary">Reassociar</button>
+        </div>
+    </form>
+</dialog>
+
+<!-- Modal para Converter Tipo -->
+<dialog id="modal-converter-tipo" class="modal-config" aria-label="Converter Tipo">
+    <div class="modal-header">
+        <h3>Converter Tipo</h3>
+        <button type="button" onclick="fecharModal('modal-converter-tipo')" class="modal-close" aria-label="Fechar">&times;</button>
+    </div>
+    <form id="form-converter-tipo" method="POST">
+        <input type="hidden" id="converter-task-id">
+        <div class="modal-body space-y-4">
+            <p class="text-sm text-slate-600">Converta o item <strong id="converter-item-nome"></strong> para outro tipo na hierarquia.</p>
+            <div>
+                <label class="block text-sm font-medium text-slate-700">Novo Tipo</label>
+                <select id="converter-novo-tipo" class="mt-1 w-full input-field">
+                    <option value="epic">Épico</option>
+                    <option value="feature">Feature</option>
+                    <option value="story">História</option>
+                    <option value="task">Tarefa</option>
+                    <option value="subtask">Subtarefa</option>
+                </select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" onclick="fecharModal('modal-converter-tipo')" class="btn-secondary">Cancelar</button>
+            <button type="submit" class="btn-primary">Converter</button>
+        </div>
+    </form>
+</dialog>
 
 <!-- Modal para Novo Item -->
 <dialog id="modal-novo-item" class="modal-config" aria-label="Novo Item">
@@ -334,11 +400,43 @@ async function rebaixarItem(taskId) {
 
 async function excluirItem(taskId) {
     if (!confirm('Excluir este item? Os itens filhos serão desvinculados.')) return;
-    // Reutiliza a rota de edição com exclusão via API de planilha não existe aqui;
-    // usaremos o endpoint de conversão? Não. Usa DELETE na planilha é via lote.
-    // Simplesmente informamos que a exclusão é feita na Planilha.
     alert('Para excluir, vá até a Planilha e utilize o botão ✕ da linha do item.');
 }
+
+function abrirModalReassociar(taskId, tipoAtual) {
+    const modal = document.getElementById('modal-reassociar-item');
+    document.getElementById('reassociar-task-id').value = taskId;
+    document.getElementById('reassociar-item-nome').textContent = `#${taskId} (${tipoAtual})`;
+    document.getElementById('form-reassociar-item').reset();
+    document.getElementById('reassociar-task-id').value = taskId;
+    modal.showModal();
+}
+
+function abrirModalConverter(taskId, tipoAtual) {
+    const modal = document.getElementById('modal-converter-tipo');
+    document.getElementById('converter-task-id').value = taskId;
+    document.getElementById('converter-item-nome').textContent = `#${taskId} (${tipoAtual})`;
+    document.getElementById('form-converter-tipo').reset();
+    document.getElementById('converter-task-id').value = taskId;
+    document.getElementById('converter-novo-tipo').value = tipoAtual;
+    modal.showModal();
+}
+
+document.getElementById('form-reassociar-item').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const taskId = document.getElementById('reassociar-task-id').value;
+    const novoParentId = document.getElementById('reassociar-novo-parent').value || null;
+    const resultado = await api(`/projeto/${projectId}/reassociar_item`, 'POST', { task_id: taskId, novo_parent_id: novoParentId });
+    if (resultado) { fecharModal('modal-reassociar-item'); location.reload(); }
+});
+
+document.getElementById('form-converter-tipo').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const taskId = document.getElementById('converter-task-id').value;
+    const novoTipo = document.getElementById('converter-novo-tipo').value;
+    const resultado = await api(`/projeto/${projectId}/converter_tipo_especifico`, 'POST', { task_id: taskId, novo_tipo: novoTipo });
+    if (resultado) { fecharModal('modal-converter-tipo'); location.reload(); }
+});
 
 document.getElementById('form-novo-item').addEventListener('submit', async function(e) {
     e.preventDefault();

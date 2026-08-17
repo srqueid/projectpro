@@ -39,6 +39,12 @@
 <button onclick="adicionarLinhaVazia()" class="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow whitespace-nowrap">
                 <span>+</span> Nova Linha
             </button>
+            <button onclick="abrirModalConfigColunas()" class="flex items-center gap-2 text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200">
+                ⚙️ Colunas
+            </button>
+            <button onclick="abrirModalCamposCustom()" class="flex items-center gap-2 text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200">
+                + Campos
+            </button>
             <div class="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2">
                 <label for="usuario-atual" class="text-xs font-medium text-slate-600 whitespace-nowrap">👤 Aprova:</label>
                 <select id="usuario-atual" onchange="salvarUsuarioAtual()" class="text-xs border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" title="Usuário que realiza a promoção/rebaixamento">
@@ -57,6 +63,7 @@
                 <thead id="header-row">
                     <tr>
                         <th class="p-0 w-10 text-center no-drag no-print"><span class="px-2">⋮⋮</span></th>
+                        <th class="p-0 w-10 text-center no-print" title="Marcar como Épico">Épico</th>
                         <th class="p-0 w-14 text-center sortable" onclick="ordenar('id', 'numero')">ID <span class="sort-icon">⇅</span></th>
                         <th class="p-0 w-10 text-center no-print" title="Tornar filha da linha acima">↳</th>
                         <th class="p-0 sortable" onclick="ordenar('fase', 'texto')">Fase <span class="sort-icon">⇅</span></th>
@@ -69,15 +76,21 @@
                         <th class="p-0 w-36 text-center bg-amber-50/50">Real Início</th>
                         <th class="p-0 w-36 text-center bg-amber-50/50">Real Fim</th>
                         <th class="p-0 w-44 sortable" onclick="ordenar('responsavel_id', 'texto')">Responsável <span class="sort-icon">⇅</span></th>
-<th class="p-0 w-24 text-center sortable" onclick="ordenar('conclusao', 'numero')">% <span class="sort-icon">⇅</span></th>
+                        <th class="p-0 w-24 text-center sortable" onclick="ordenar('conclusao', 'numero')">% <span class="sort-icon">⇅</span></th>
                         <th class="p-0 w-28 text-center no-print">Tipo</th>
+                        {% for campo in config_planilha.campos %}
+                        <th class="p-0 w-32 text-center no-print" data-campo-id="{{ campo.id }}">{{ campo.nome }}</th>
+                        {% endfor %}
                     </tr>
                 </thead>
                 <tbody id="tabela-corpo">
                     {% for t in tarefas %}
-                    <tr class="group transition-colors" data-id="{{ t.id }}" data-parent-id="{{ t.parent_id or '' }}" data-tipo="{{ t.tipo or 'task' }}">
+                    <tr class="group transition-colors" data-id="{{ t.id }}" data-pk-id="{{ t.pk_id }}" data-parent-id="{{ t.parent_id or '' }}" data-tipo="{{ t.tipo or 'task' }}">
                         <td class="p-0 align-middle text-center handle border-r no-print">
                             <div class="h-full flex items-center justify-center cursor-grab">⋮⋮</div>
+                        </td>
+                        <td class="p-0 text-center border-r no-print">
+                            <input type="checkbox" class="epic-checkbox" data-pk-id="{{ t.pk_id }}" {% if t.pk_id|string in config_planilha.epicos %}checked{% endif %} onchange="toggleEpico(this)">
                         </td>
                         <td class="p-0 text-center text-xs font-mono border-r">{{ t.id }}</td>
                         <td class="p-0 text-center border-r no-print">
@@ -129,7 +142,7 @@
                             <div class="progress-bar" style="width: {{ t.conclusao or 0 }}%;"></div>
                             <input type="number" name="conclusao" value="{{ t.conclusao or 0 }}" class="sheet-input text-center" oninput="handleConclusionChange(this)">
                         </td>
-<td class="p-0 text-center no-print">
+                        <td class="p-0 text-center no-print">
                             <div class="flex items-center gap-1 px-1">
                                 <select name="tipo" class="tipo-select" onchange="onTipoChange(this)" title="Alterar tipo do item">
                                     <option value="epic" {% if (t.tipo or 'task') == 'epic' %}selected{% endif %}>Épico</option>
@@ -146,12 +159,90 @@
                             <input type="hidden" name="kanban_coluna_id" value="{{ t.kanban_coluna_id or 'backlog' }}">
                             <input type="hidden" name="parent_id" value="{{ t.parent_id or '' }}">
                         </td>
+                        {% for campo in config_planilha.campos %}
+                        <td class="p-0 border-r no-print">
+                            {% if campo.tipo == 'data' %}
+                                <input type="date" name="custom_{{ campo.id }}" value="{{ (t.valores_custom[campo.nome].valor_data if t.valores_custom and campo.nome in t.valores_custom) or '' }}" class="sheet-input text-center" oninput="detectarMudanca()">
+                            {% elif campo.tipo == 'numerico' %}
+                                <input type="number" name="custom_{{ campo.id }}" value="{{ (t.valores_custom[campo.nome].valor_numerico if t.valores_custom and campo.nome in t.valores_custom) or '' }}" class="sheet-input text-center" oninput="detectarMudanca()">
+                            {% elif campo.tipo == 'texto_longo' %}
+                                <textarea name="custom_{{ campo.id }}" class="sheet-input" rows="1" oninput="detectarMudanca()">{{ (t.valores_custom[campo.nome].valor_texto if t.valores_custom and campo.nome in t.valores_custom) or '' }}</textarea>
+                            {% else %}
+                                <input type="text" name="custom_{{ campo.id }}" value="{{ (t.valores_custom[campo.nome].valor_texto if t.valores_custom and campo.nome in t.valores_custom) or '' }}" class="sheet-input" oninput="detectarMudanca()">
+                            {% endif %}
+                        </td>
+                        {% endfor %}
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
     </div>
+
+    <!-- Modal Configuração de Colunas -->
+    <dialog id="modal-config-colunas" class="modal-config" aria-label="Configurar Colunas">
+        <div class="modal-header">
+            <h3>Configurar Colunas</h3>
+            <button type="button" onclick="fecharModal('modal-config-colunas')" class="modal-close" aria-label="Fechar">&times;</button>
+        </div>
+        <form id="form-config-colunas" method="POST">
+            <div class="modal-body space-y-2">
+                {% set colunas_padrao = [
+                    {'id':'id','label':'ID'}, {'id':'fase','label':'Fase'}, {'id':'tarefa','label':'Tarefa'},
+                    {'id':'subtarefa','label':'Subtarefa'}, {'id':'baseline_inicio','label':'Início Planejado'},
+                    {'id':'dias','label':'Dias'}, {'id':'baseline_fim','label':'Fim Planejado'},
+                    {'id':'predecessora','label':'Predecessora'}, {'id':'inicio','label':'Real Início'},
+                    {'id':'fim','label':'Real Fim'}, {'id':'responsavel','label':'Responsável'},
+                    {'id':'conclusao','label':'Conclusão %'}, {'id':'tipo','label':'Tipo'}
+                ] %}
+                {% set mapa_colunas = {} %}
+                {% for c in config_planilha.colunas %}
+                    {% do mapa_colunas.update({c.coluna_id: c.visivel}) %}
+                {% endfor %}
+                {% for col in colunas_padrao %}
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="col-{{ col.id }}" name="colunas" value="{{ col.id }}" {% if mapa_colunas.get(col.id, true) %}checked{% endif %}>
+                    <label for="col-{{ col.id }}" class="text-sm text-slate-700">{{ col.label }}</label>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="modal-footer">
+                <button type="button" onclick="fecharModal('modal-config-colunas')" class="btn-secondary">Cancelar</button>
+                <button type="submit" class="btn-primary">Salvar</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- Modal Campos Customizados -->
+    <dialog id="modal-campos-custom" class="modal-config" aria-label="Campos Customizados">
+        <div class="modal-header">
+            <h3>Campos Customizados</h3>
+            <button type="button" onclick="fecharModal('modal-campos-custom')" class="modal-close" aria-label="Fechar">&times;</button>
+        </div>
+        <form id="form-campos-custom" method="POST">
+            <div class="modal-body space-y-3">
+                <div id="lista-campos-custom">
+                    {% for campo in config_planilha.campos %}
+                    <div class="flex items-center gap-2" data-campo-id="{{ campo.id }}">
+                        <input type="text" name="nome" value="{{ campo.nome }}" class="sheet-input flex-1" placeholder="Nome">
+                        <select name="tipo" class="sheet-input">
+                            <option value="texto" {% if campo.tipo == 'texto' %}selected{% endif %}>Texto</option>
+                            <option value="texto_longo" {% if campo.tipo == 'texto_longo' %}selected{% endif %}>Texto Longo</option>
+                            <option value="data" {% if campo.tipo == 'data' %}selected{% endif %}>Data</option>
+                            <option value="numerico" {% if campo.tipo == 'numerico' %}selected{% endif %}>Numérico</option>
+                        </select>
+                        <button type="button" onclick="removerCampoCustom(this)" class="text-red-600 hover:text-red-800 text-sm">✕</button>
+                    </div>
+                    {% endfor %}
+                </div>
+                <button type="button" onclick="adicionarCampoCustom()" class="text-sm text-indigo-600 hover:text-indigo-800">+ Adicionar Campo</button>
+            </div>
+            <div class="modal-footer">
+                <button type="button" onclick="fecharModal('modal-campos-custom')" class="btn-secondary">Cancelar</button>
+                <button type="submit" class="btn-primary">Salvar Campos</button>
+            </div>
+        </form>
+    </dialog>
 
     <script>
 const projectRecalcularUrl = "/projeto/{{ project_id }}/recalcular_rapido";
@@ -160,6 +251,7 @@ const projectRecalcularUrl = "/projeto/{{ project_id }}/recalcular_rapido";
         const initialTasks = {{ tarefas|tojson }};
         const responsaveis = {{ responsaveis|tojson }};
         const colunaAndamentoId = "{{ coluna_andamento_id }}";
+        const configPlanilha = {{ config_planilha|tojson }};
     </script>
     <script src="{{ url_for('static', filename='planilha.js') }}"></script>
 {% endblock %}

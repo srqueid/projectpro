@@ -403,6 +403,296 @@ def converter_tipo_tarefa(project_id, task_id, direcao, responsavel_id=None):
     }
 
 
+def reassociar_item(project_id, task_id, novo_parent_id, responsavel_id=None):
+    """
+    Reassocia um item a um novo pai na hierarquia (Modelo A - legacy).
+    Valida nível hierárquico e impede ciclos.
+    """
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM projeto.tarefas WHERE projeto_id = %s AND id = %s", (project_id, task_id))
+        tarefa = cur.fetchone()
+        if not tarefa:
+            raise ValueError(f"Item ID {task_id} não encontrado no projeto.")
+        tarefa = dict(tarefa)
+
+        if novo_parent_id:
+            cur.execute("SELECT * FROM projeto.tarefas WHERE projeto_id = %s AND id = %s", (project_id, novo_parent_id))
+            pai = cur.fetchone()
+            if not pai:
+                raise ValueError(f"Item pai ID {novo_parent_id} não encontrado no projeto.")
+            pai = dict(pai)
+
+            nivel_filho = TIPO_NIVEL.get(tarefa.get('tipo') or 'task', 4)
+            nivel_pai = TIPO_NIVEL.get(pai.get('tipo') or 'task', 4)
+
+            if nivel_filho <= nivel_pai:
+                raise ValueError(
+                    f"Associação inválida: {TIPO_LABELS.get(tarefa.get('tipo') or 'task')} (nível {nivel_filho}) "
+                    f"não pode ser filho de {TIPO_LABELS.get(pai.get('tipo') or 'task')} (nível {nivel_pai}). "
+                    f"O pai deve ser de nível superior (menor número) ao filho."
+                )
+
+            current = str(novo_parent_id)
+            visited = set()
+            while current:
+                if current == str(task_id):
+                    raise ValueError("Associação inválida: criaria uma referência circular.")
+                if current in visited:
+                    break
+                visited.add(current)
+                cur.execute("SELECT parent_id FROM projeto.tarefas WHERE projeto_id = %s AND id = %s", (project_id, current))
+                row = cur.fetchone()
+                current = str(row['parent_id']) if row and row['parent_id'] else None
+
+        cur.execute(
+            "UPDATE projeto.tarefas SET parent_id = %s WHERE projeto_id = %s AND id = %s",
+            (novo_parent_id, project_id, task_id)
+        )
+
+        log_detalhe = (
+            f"Item '{tarefa.get('tarefa') or tarefa.get('subtarefa') or f'ID {task_id}'}' "
+            f"reassociado ao pai ID {novo_parent_id or 'nenhum'}."
+        )
+        adicionar_log_atividade(cur, tarefa['pk_id'], responsavel_id, log_detalhe)
+
+    db.commit()
+
+
+def converter_tipo_especifico(project_id, task_id, novo_tipo, responsavel_id=None):
+    """
+    Converte um item para um tipo específico na hierarquia (Modelo A - legacy).
+    Ajusta vínculos pai/filho que ficariam inválidos e registra log.
+    """
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM projeto.tarefas WHERE projeto_id = %s AND id = %s", (project_id, task_id))
+        tarefa = cur.fetchone()
+        if not tarefa:
+            raise ValueError(f"Item ID {task_id} não encontrado no projeto.")
+        tarefa = dict(tarefa)
+        tipo_atual = tarefa.get('tipo') or 'task'
+
+        if tipo_atual == novo_tipo:
+            return {'status': 'sucesso', 'tarefa_id': task_id, 'tipo_anterior': tipo_atual, 'tipo_novo': novo_tipo}
+
+        perfil_necessario = _perfil_de_aprovacao(tipo_atual, novo_tipo)
+        perfil_usuario = 'executor'
+        if responsavel_id:
+            cur.execute("SELECT perfil FROM rh.responsaveis WHERE id = %s", (responsavel_id,))
+            row = cur.fetchone()
+            if row:
+                perfil_usuario = row['perfil'] or 'executor'
+        if not _tem_permissao_aprovacao(perfil_usuario, perfil_necessario):
+            raise PermissionError(
+                f"Alçada insuficiente. A transição {TIPO_LABELS.get(tipo_atual)} → {TIPO_LABELS.get(novo_tipo)} "
+                f"requer aprovação de: {PERFIS_LABELS.get(perfil_necessario, perfil_necessario)}."
+            )
+
+        parent_id = tarefa.get('parent_id')
+        if parent_id:
+            cur.execute("SELECT tipo FROM projeto.tarefas WHERE projeto_id = %s AND id = %s", (project_id, parent_id))
+            parent_row = cur.fetchone()
+            parent_tipo = (parent_row['tipo'] if parent_row else 'task') or 'task'
+            if TIPO_NIVEL.get(novo_tipo) != TIPO_NIVEL.get(parent_tipo) + 1:
+                cur.execute("UPDATE projeto.tarefas SET parent_id = NULL WHERE projeto_id = %s AND id = %s", (project_id, task_id))
+
+        cur.execute("SELECT * FROM projeto.tarefas WHERE projeto_id = %s AND parent_id = %s", (project_id, task_id))
+        filhos = [dict(r) for r in cur.fetchall()]
+        for filho in filhos:
+            filho_tipo = filho.get('tipo') or 'task'
+            if TIPO_NIVEL.get(filho_tipo) != TIPO_NIVEL.get(novo_tipo) + 1:
+                cur.execute("UPDATE projeto.tarefas SET parent_id = NULL WHERE projeto_id = %s AND id = %s", (project_id, filho['id']))
+
+        cur.execute("UPDATE projeto.tarefas SET tipo = %s WHERE projeto_id = %s AND id = %s", (novo_tipo, project_id, task_id))
+
+        log_detalhe = (
+            f"Item '{tarefa.get('tarefa') or tarefa.get('subtarefa') or f'ID {task_id}'}' "
+            f"convertido: {TIPO_LABELS.get(tipo_atual)} → {TIPO_LABELS.get(novo_tipo)}."
+        )
+        adicionar_log_atividade(cur, tarefa['pk_id'], responsavel_id, log_detalhe)
+
+    db.commit()
+    return {
+        'status': 'sucesso',
+        'tarefa_id': task_id,
+        'tipo_anterior': tipo_atual,
+        'tipo_novo': novo_tipo
+    }
+
+
+# =============================================================================
+# CONFIGURAÇÃO DA PLANILHA (COLUNAS, CAMPOS CUSTOM, ÉPICOS)
+# =============================================================================
+
+def carregar_config_planilha(project_id):
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT coluna_id, visivel, ordem FROM projeto.planilha_colunas_config WHERE projeto_id = %s ORDER BY ordem", (project_id,))
+        colunas = [dict(row) for row in cur.fetchall()]
+
+        cur.execute("SELECT id, nome, tipo, ordem FROM projeto.planilha_campos_custom WHERE projeto_id = %s ORDER BY ordem", (project_id,))
+        campos = [dict(row) for row in cur.fetchall()]
+
+        cur.execute("SELECT tarefa_pk_id FROM projeto.planilha_epicos WHERE projeto_id = %s", (project_id,))
+        epicos = {str(row['tarefa_pk_id']) for row in cur.fetchall()}
+
+    return {'colunas': colunas, 'campos': campos, 'epicos': epicos}
+
+
+def salvar_config_colunas_planilha(project_id, colunas):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM projeto.planilha_colunas_config WHERE projeto_id = %s", (project_id,))
+        for idx, col in enumerate(colunas):
+            cur.execute(
+                "INSERT INTO projeto.planilha_colunas_config (projeto_id, coluna_id, visivel, ordem) VALUES (%s, %s, %s, %s)",
+                (project_id, col['coluna_id'], col.get('visivel', True), idx)
+            )
+    db.commit()
+
+
+def salvar_campos_custom(project_id, campos):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM projeto.planilha_campos_custom WHERE projeto_id = %s", (project_id,))
+        for idx, campo in enumerate(campos):
+            cur.execute(
+                "INSERT INTO projeto.planilha_campos_custom (projeto_id, nome, tipo, ordem) VALUES (%s, %s, %s, %s)",
+                (project_id, campo['nome'], campo['tipo'], idx)
+            )
+    db.commit()
+
+
+def salvar_epicos_planilha(project_id, epico_ids):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM projeto.planilha_epicos WHERE projeto_id = %s", (project_id,))
+        for eid in epico_ids:
+            try:
+                eid_int = int(eid)
+            except (ValueError, TypeError):
+                continue
+            cur.execute("SELECT pk_id FROM projeto.tarefas WHERE projeto_id = %s AND id = %s", (project_id, eid_int))
+            row = cur.fetchone()
+            if row:
+                cur.execute(
+                    "INSERT INTO projeto.planilha_epicos (projeto_id, tarefa_pk_id) VALUES (%s, %s)",
+                    (project_id, row[0])
+                )
+    db.commit()
+
+
+def carregar_valores_custom(tarefa_ids):
+    if not tarefa_ids:
+        return {}
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute(
+            """
+            SELECT vc.tarefa_id, vc.campo_id, c.nome, c.tipo, vc.valor_texto, vc.valor_data, vc.valor_numerico
+            FROM projeto.planilha_valores_custom vc
+            JOIN projeto.planilha_campos_custom c ON c.id = vc.campo_id
+            WHERE vc.tarefa_id = ANY(%s)
+            """,
+            (list(tarefa_ids),)
+        )
+        rows = [dict(row) for row in cur.fetchall()]
+    result = {}
+    for row in rows:
+        tid = str(row['tarefa_id'])
+        if tid not in result:
+            result[tid] = {}
+        result[tid][row['nome']] = {
+            'tipo': row['tipo'],
+            'valor_texto': row['valor_texto'],
+            'valor_data': row['valor_data'].strftime('%Y-%m-%d') if row['valor_data'] else None,
+            'valor_numerico': row['valor_numerico']
+        }
+    return result
+
+
+def salvar_valores_custom(project_id, tarefa_id, valores):
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute("SELECT id, tipo FROM projeto.planilha_campos_custom WHERE projeto_id = %s", (project_id,))
+        campos = {str(row['id']): row['tipo'] for row in cur.fetchall()}
+        for campo_id, tipo in campos.items():
+            val = valores.get(campo_id)
+            if val is None or val == '':
+                cur.execute(
+                    "DELETE FROM projeto.planilha_valores_custom WHERE tarefa_id = %s AND campo_id = %s",
+                    (tarefa_id, campo_id)
+                )
+            else:
+                if tipo == 'texto' or tipo == 'texto_longo':
+                    cur.execute(
+                        """
+                        INSERT INTO projeto.planilha_valores_custom (tarefa_id, campo_id, valor_texto)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (tarefa_id, campo_id) DO UPDATE SET valor_texto = EXCLUDED.valor_texto
+                        """,
+                        (tarefa_id, campo_id, val)
+                    )
+                elif tipo == 'data':
+                    cur.execute(
+                        """
+                        INSERT INTO projeto.planilha_valores_custom (tarefa_id, campo_id, valor_data)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (tarefa_id, campo_id) DO UPDATE SET valor_data = EXCLUDED.valor_data
+                        """,
+                        (tarefa_id, campo_id, val)
+                    )
+                elif tipo == 'numerico':
+                    try:
+                        num = float(val)
+                    except (ValueError, TypeError):
+                        num = None
+                    cur.execute(
+                        """
+                        INSERT INTO projeto.planilha_valores_custom (tarefa_id, campo_id, valor_numerico)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (tarefa_id, campo_id) DO UPDATE SET valor_numerico = EXCLUDED.valor_numerico
+                        """,
+                        (tarefa_id, campo_id, num)
+                    )
+    db.commit()
+
+
+def carregar_tarefas_planilha(project_id):
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM projeto.tarefas WHERE projeto_id = %s AND (tipo IS NULL OR tipo != 'epic') ORDER BY id", (project_id,))
+        tarefas = [dict(row) for row in cur.fetchall()]
+        if not tarefas:
+            return tarefas
+        ids = [t['id'] for t in tarefas]
+        cur.execute(
+            """
+            SELECT vc.tarefa_id, c.nome, c.tipo, vc.valor_texto, vc.valor_data, vc.valor_numerico
+            FROM projeto.planilha_valores_custom vc
+            JOIN projeto.planilha_campos_custom c ON c.id = vc.campo_id
+            WHERE vc.tarefa_id = ANY(%s)
+            """,
+            (ids,)
+        )
+        rows = [dict(row) for row in cur.fetchall()]
+    valores_por_tarefa = {}
+    for row in rows:
+        tid = str(row['tarefa_id'])
+        if tid not in valores_por_tarefa:
+            valores_por_tarefa[tid] = {}
+        valores_por_tarefa[tid][row['nome']] = {
+            'tipo': row['tipo'],
+            'valor_texto': row['valor_texto'],
+            'valor_data': row['valor_data'],
+            'valor_numerico': row['valor_numerico']
+        }
+    for t in tarefas:
+        t['valores_custom'] = valores_por_tarefa.get(str(t['id']), {})
+    return tarefas
+
+
 def salvar_tarefas(project_id, tarefas):
     # Valida a hierarquia de tipos (Épico → Feature → História → Tarefa → Subtarefa)
     _validar_hierarquia_tipos(tarefas)

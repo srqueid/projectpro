@@ -18,7 +18,35 @@ document.addEventListener('DOMContentLoaded', () => {
     pushToUndoStack(initialTasks);
     rebuildHierarchyUI();
     verificarConflitosDeFerias(); // Verificação inicial
+    applyColumnVisibility();
 });
+
+function applyColumnVisibility() {
+    if (!configPlanilha || !configPlanilha.colunas) return;
+    const mapa = {};
+    configPlanilha.colunas.forEach(c => { mapa[c.coluna_id] = c.visivel; });
+
+    const colunasPadrao = ['id','fase','tarefa','subtarefa','baseline_inicio','dias','baseline_fim','predecessora','inicio','fim','responsavel','conclusao','tipo'];
+    const headers = document.querySelectorAll('#header-row th');
+    const rows = document.querySelectorAll('#tabela-corpo tr');
+
+    headers.forEach((th, idx) => {
+        const campo = th.getAttribute('data-campo-id');
+        const colunaId = campo || colunasPadrao[idx - 2]; // -2 por causa de handle e epic checkbox
+        if (!colunaId) return;
+        const visivel = campo ? true : (mapa[colunaId] !== false);
+        th.style.display = visivel ? '' : 'none';
+    });
+
+    rows.forEach(tr => {
+        const cells = Array.from(tr.children);
+        cells.forEach((td, idx) => {
+            const header = headers[idx];
+            if (!header) return;
+            td.style.display = header.style.display;
+        });
+    });
+}
 
 function initSortable() {
     new Sortable(tbody, { handle: '.handle', animation: 150, onEnd: () => detectarMudanca(true) });
@@ -42,7 +70,8 @@ async function desfazer() {
     if (undoStack.length <= 1) return;
     undoStack.pop();
     const prevState = undoStack[undoStack.length - 1];
-    renderTable(prevState);
+    const prevTasks = Array.isArray(prevState) ? prevState : (prevState.tasks || prevState);
+    renderTable(prevTasks);
     await salvarTudo(false);
     updateUndoButton();
     rebuildHierarchyUI();
@@ -81,14 +110,16 @@ function detectarMudanca(forceRecalculate = false) {
 
 async function salvarTudo(addToUndo = true) {
     setStatus('Salvando...', 'text-blue-600');
-    const tasks = getTasksFromTable();
+    const { tasks, valoresCustom } = getTasksFromTable();
     if (addToUndo) pushToUndoStack(tasks);
 
     try {
+        const payload = [...tasks];
+        payload.valores_custom = valoresCustom;
         const response = await fetch(projectSalvarUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(tasks)
+            body: JSON.stringify(payload)
         });
         if (response.ok) setStatus('Salvo', 'text-emerald-600');
         else {
@@ -398,6 +429,122 @@ function verificarConflitosDeFerias() {
     });
 }
 
+// --- ÉPICOS NA PLANILHA ---
+
+async function toggleEpico(checkbox) {
+    const pkId = checkbox.dataset.pkId;
+    const isEpico = checkbox.checked;
+    const tr = checkbox.closest('tr');
+    const tipoSelect = tr.querySelector('[name="tipo"]');
+    const hiddenInput = tr.querySelector('[name="parent_id"]');
+
+    if (isEpico) {
+        tr.dataset.tipo = 'epic';
+        if (tipoSelect) tipoSelect.value = 'epic';
+        if (hiddenInput) hiddenInput.value = '';
+        tr.dataset.parentId = '';
+        const badge = tr.querySelector('.tipo-badge-planilha');
+        if (badge) {
+            badge.className = badge.className.replace(/tipo-\w+/g, '');
+            badge.classList.add('tipo-badge-planilha', 'tipo-epic');
+            badge.textContent = 'Épico';
+        }
+        checkbox.checked = true;
+        tr.style.display = 'none';
+    } else {
+        tr.dataset.tipo = 'task';
+        if (tipoSelect) tipoSelect.value = 'task';
+        if (hiddenInput) hiddenInput.value = '';
+        tr.dataset.parentId = '';
+        const badge = tr.querySelector('.tipo-badge-planilha');
+        if (badge) {
+            badge.className = badge.className.replace(/tipo-\w+/g, '');
+            badge.classList.add('tipo-badge-planilha', 'tipo-task');
+            badge.textContent = 'Tarefa';
+        }
+        checkbox.checked = false;
+        tr.style.display = '';
+    }
+
+    rebuildHierarchyUI();
+    await salvarEpicos();
+    detectarMudanca(true);
+}
+
+async function salvarEpicos() {
+    const epicos = [];
+    document.querySelectorAll('.epic-checkbox:checked').forEach(cb => {
+        epicos.push(cb.dataset.pkId);
+    });
+    await fetch(`/projeto/${projectId}/planilha/config/epicos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ epicos })
+    });
+}
+
+// --- CONFIGURAÇÃO DE COLUNAS E CAMPOS CUSTOM ---
+
+function abrirModalConfigColunas() {
+    document.getElementById('modal-config-colunas').showModal();
+}
+
+function abrirModalCamposCustom() {
+    document.getElementById('modal-campos-custom').showModal();
+}
+
+function adicionarCampoCustom() {
+    const container = document.getElementById('lista-campos-custom');
+    const div = document.createElement('div');
+    div.className = 'flex items-center gap-2';
+    div.innerHTML = `
+        <input type="text" name="nome" class="sheet-input flex-1" placeholder="Nome">
+        <select name="tipo" class="sheet-input">
+            <option value="texto">Texto</option>
+            <option value="texto_longo">Texto Longo</option>
+            <option value="data">Data</option>
+            <option value="numerico">Numérico</option>
+        </select>
+        <button type="button" onclick="removerCampoCustom(this)" class="text-red-600 hover:text-red-800 text-sm">✕</button>
+    `;
+    container.appendChild(div);
+}
+
+function removerCampoCustom(btn) {
+    btn.closest('div').remove();
+}
+
+document.getElementById('form-config-colunas').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const colunas = [];
+    document.querySelectorAll('#form-config-colunas input[name="colunas"]:checked').forEach(cb => {
+        colunas.push({ coluna_id: cb.value, visivel: true });
+    });
+    await fetch(`/projeto/${projectId}/planilha/config/colunas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ colunas })
+    });
+    fecharModal('modal-config-colunas');
+    location.reload();
+});
+
+document.getElementById('form-campos-custom').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const campos = [];
+    document.querySelectorAll('#lista-campos-custom > div').forEach(div => {
+        const nome = div.querySelector('[name="nome"]').value.trim();
+        const tipo = div.querySelector('[name="tipo"]').value;
+        if (nome) campos.push({ nome, tipo });
+    });
+    await fetch(`/projeto/${projectId}/planilha/config/campos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campos })
+    });
+    fecharModal('modal-campos-custom');
+    location.reload();
+});
 
 // --- VALIDAÇÃO: DATA FIM NÃO PODE SER MENOR QUE DATA INÍCIO ---
 
@@ -518,14 +665,26 @@ function definirRestricaoManual(inputInicio) {
 // --- MANIPULAÇÃO DA TABELA ---
 
 function getTasksFromTable() {
-    return Array.from(tbody.querySelectorAll('tr')).map(tr => {
+    const tasks = [];
+    const valoresCustom = [];
+
+    Array.from(tbody.querySelectorAll('tr')).forEach(tr => {
         const get = (name) => {
             const el = tr.querySelector(`[name="${name}"]`);
             if (!el) return null;
             const v = el.value;
             return v === '' ? null : v;
         };
-        return {
+        const customInputs = tr.querySelectorAll('[name^="custom_"]');
+        const valores = {};
+        customInputs.forEach(input => {
+            const campoId = input.name.replace('custom_', '');
+            valores[campoId] = input.value;
+        });
+        if (Object.keys(valores).length > 0) {
+            valoresCustom.push({ tarefa_id: tr.dataset.id, valores });
+        }
+        tasks.push({
             id: tr.dataset.id,
             tipo: get('tipo'),
             fase: get('fase'),
@@ -544,8 +703,10 @@ function getTasksFromTable() {
             restricao_data: tr.dataset.restricaoData || null,
             kanban_coluna_id: get('kanban_coluna_id'),
             parent_id: tr.dataset.parentId || null
-        };
+        });
     });
+
+    return { tasks, valoresCustom };
 }
 
 function renderTable(tasks) {
@@ -610,6 +771,9 @@ function createTaskRowHtml(t) {
 
     return `
         <td class="p-0 align-middle text-center handle border-r no-print"><div class="h-full flex items-center justify-center cursor-grab">⋮⋮</div></td>
+        <td class="p-0 text-center border-r no-print">
+            <input type="checkbox" class="epic-checkbox" data-id="${t.id}" ${tipoAtual === 'epic' ? 'checked' : ''} onchange="toggleEpico(this)">
+        </td>
         <td class="p-0 text-center text-xs font-mono border-r">${t.id}</td>
         <td class="p-0 text-center border-r no-print">
             <button type="button" class="btn-child-toggle ${isChild ? 'is-child' : ''}"
@@ -645,6 +809,20 @@ function createTaskRowHtml(t) {
             <input type="hidden" name="kanban_coluna_id" value="${t.kanban_coluna_id || 'backlog'}">
             <input type="hidden" name="parent_id" value="${t.parent_id || ''}">
         </td>
+        ${(configPlanilha.campos || []).map(campo => {
+            const val = (t.valores_custom && t.valores_custom[campo.nome]) ? t.valores_custom[campo.nome] : null;
+            let inputHtml = '';
+            if (campo.tipo === 'data') {
+                inputHtml = `<input type="date" name="custom_${campo.id}" value="${val ? val.valor_data || '' : ''}" class="sheet-input text-center" oninput="detectarMudanca()">`;
+            } else if (campo.tipo === 'numerico') {
+                inputHtml = `<input type="number" name="custom_${campo.id}" value="${val ? val.valor_numerico || '' : ''}" class="sheet-input text-center" oninput="detectarMudanca()">`;
+            } else if (campo.tipo === 'texto_longo') {
+                inputHtml = `<textarea name="custom_${campo.id}" class="sheet-input" rows="1" oninput="detectarMudanca()">${val ? val.valor_texto || '' : ''}</textarea>`;
+            } else {
+                inputHtml = `<input type="text" name="custom_${campo.id}" value="${val ? val.valor_texto || '' : ''}" class="sheet-input" oninput="detectarMudanca()">`;
+            }
+            return `<td class="p-0 border-r no-print">${inputHtml}</td>`;
+        }).join('')}
     `;
 }
 

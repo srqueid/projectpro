@@ -412,6 +412,51 @@ CREATE TABLE IF NOT EXISTS projeto.projeto_configuracoes (
     UNIQUE(projeto_id, chave)
 );
 
+-- -----------------------------------------------------------------------------
+-- Tabela de Configuração de Colunas da Planilha
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS projeto.planilha_colunas_config (
+    id SERIAL PRIMARY KEY,
+    projeto_id VARCHAR(255) NOT NULL REFERENCES projeto.projetos(id) ON DELETE CASCADE,
+    coluna_id VARCHAR(100) NOT NULL,
+    visivel BOOLEAN DEFAULT TRUE,
+    ordem INTEGER DEFAULT 0,
+    UNIQUE(projeto_id, coluna_id)
+);
+
+-- -----------------------------------------------------------------------------
+-- Tabela de Campos Personalizados da Planilha
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS projeto.planilha_campos_custom (
+    id SERIAL PRIMARY KEY,
+    projeto_id VARCHAR(255) NOT NULL REFERENCES projeto.projetos(id) ON DELETE CASCADE,
+    nome VARCHAR(255) NOT NULL,
+    tipo VARCHAR(50) NOT NULL CHECK (tipo IN ('texto', 'data', 'numerico', 'texto_longo')),
+    ordem INTEGER DEFAULT 0,
+    UNIQUE(projeto_id, nome)
+);
+
+-- -----------------------------------------------------------------------------
+-- Tabela de Associação: Épicos marcados na Planilha
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS projeto.planilha_epicos (
+    projeto_id VARCHAR(255) NOT NULL REFERENCES projeto.projetos(id) ON DELETE CASCADE,
+    tarefa_pk_id INTEGER NOT NULL REFERENCES projeto.tarefas(pk_id) ON DELETE CASCADE,
+    PRIMARY KEY (projeto_id, tarefa_pk_id)
+);
+
+-- -----------------------------------------------------------------------------
+-- Tabela de Valores de Campos Personalizados da Planilha
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS projeto.planilha_valores_custom (
+    tarefa_pk_id INTEGER NOT NULL REFERENCES projeto.tarefas(pk_id) ON DELETE CASCADE,
+    campo_id INTEGER NOT NULL REFERENCES projeto.planilha_campos_custom(id) ON DELETE CASCADE,
+    valor_texto TEXT,
+    valor_data DATE,
+    valor_numerico NUMERIC,
+    PRIMARY KEY (tarefa_pk_id, campo_id)
+);
+
 -- =============================================================================
 -- SCHEMA config — CONFIGURAÇÕES GERAIS
 -- =============================================================================
