@@ -800,3 +800,89 @@ def hierarquia_excluir_tarefa(empresa_id, project_id, item_id):
 def hierarquia_excluir_subtarefa(empresa_id, project_id, item_id):
     project_manager.excluir_subtarefa(empresa_id, item_id)
     return redirect(url_for('main.hierarquia', empresa_id=empresa_id, project_id=project_id))
+
+
+# =============================================================================
+# ROTAS JSON PARA CRUD HIERÁRQUICO DINÂMICO
+# (usadas pelo componente recursivo HierarchicalNode no front-end)
+# =============================================================================
+
+@main_bp.route('/empresa/<empresa_id>/projeto/<project_id>/hierarquia/renomear', methods=['POST'])
+def hierarquia_renomear(empresa_id, project_id):
+    """
+    Edição inline via duplo-clique: renomeia um item de qualquer nível.
+    Espera JSON: { tipo: 'epico'|'feature'|'historia'|'tarefa'|'subtarefa',
+                   id: UUID, titulo: 'novo nome' }
+    """
+    dados = request.get_json(force=True) or {}
+    tipo = dados.get('tipo')
+    item_id = dados.get('id')
+    titulo = dados.get('titulo')
+    try:
+        ok = project_manager.renomear_item(empresa_id, tipo, item_id, titulo)
+        return jsonify({'status': 'sucesso' if ok else 'erro', 'atualizado': ok})
+    except ValueError as e:
+        return jsonify({'status': 'erro', 'erro': str(e)}), 400
+
+
+@main_bp.route('/empresa/<empresa_id>/projeto/<project_id>/hierarquia/contar_filhos', methods=['POST'])
+def hierarquia_contar_filhos_excluir(empresa_id, project_id):
+    """
+    Conta quantos itens filhos serão excluídos/afetados em cascata — usado
+    pelo alerta de confirmação em cascata antes de excluir ou alterar tipo.
+    Espera JSON: { tipo: ..., id: UUID }
+    Retorna: { epico, feature, historia, tarefa, subtarefa, total }
+    """
+    dados = request.get_json(force=True) or {}
+    tipo = dados.get('tipo')
+    item_id = dados.get('id')
+    counts = project_manager.contar_filhos_afetados(empresa_id, tipo, item_id)
+    if not counts:
+        return jsonify({'status': 'erro', 'erro': 'Item não encontrado.'}), 404
+    counts['status'] = 'sucesso'
+    return jsonify(counts)
+
+
+@main_bp.route('/empresa/<empresa_id>/projeto/<project_id>/hierarquia/alterar_tipo', methods=['POST'])
+def hierarquia_alterar_tipo(empresa_id, project_id):
+    """
+    Altera o tipo de um item (ex: Tarefa -> Subtarefa) com transação.
+    Espera JSON: { tipo_atual, id, novo_tipo, novo_pai_id (opcional) }
+    """
+    dados = request.get_json(force=True) or {}
+    tipo_atual = dados.get('tipo_atual')
+    item_id = dados.get('id')
+    novo_tipo = dados.get('novo_tipo')
+    novo_pai_id = dados.get('novo_pai_id') or None
+    resultado = project_manager.alterar_tipo_item(empresa_id, tipo_atual, item_id, novo_tipo, novo_pai_id)
+    if not resultado.get('ok'):
+        return jsonify({'status': 'erro', 'erro': resultado.get('erro') or 'Falha ao alterar tipo.'}), 400
+    return jsonify({
+        'status': 'sucesso',
+        'novo_id': resultado.get('novo_id'),
+        'novo_tipo': resultado.get('novo_tipo'),
+    })
+
+
+@main_bp.route('/empresa/<empresa_id>/projeto/<project_id>/hierarquia/criar_subitem', methods=['POST'])
+def hierarquia_criar_subitem(empresa_id, project_id):
+    """
+    Cria um filho direto a partir do botão + contextual de cada nó.
+    Espera JSON: { tipo_pai, pai_id, tipo_filho, titulo, descricao?, pontos?,
+                   responsavel_id?, dias?, sprint? }
+    """
+    dados = request.get_json(force=True) or {}
+    tipo_pai = dados.get('tipo_pai')
+    pai_id = dados.get('pai_id')
+    tipo_filho = dados.get('tipo_filho')
+    titulo = dados.get('titulo')
+    extras = {k: v for k, v in dados.items() if k in ('descricao', 'pontos', 'responsavel_id', 'dias', 'sprint')}
+    try:
+        novo_id = project_manager.criar_subitem_hierarquico(
+            empresa_id, project_id, tipo_pai, pai_id, tipo_filho, titulo, **extras
+        )
+        if not novo_id:
+            return jsonify({'status': 'erro', 'erro': 'Falha ao criar sub-item.'}), 400
+        return jsonify({'status': 'sucesso', 'novo_id': str(novo_id), 'tipo': tipo_filho})
+    except ValueError as e:
+        return jsonify({'status': 'erro', 'erro': str(e)}), 400

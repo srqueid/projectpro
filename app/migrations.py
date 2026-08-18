@@ -399,6 +399,134 @@ def _epico_de_tarefa(tarefas_hie, tarefa_uuid):
     return None
 
 
+def _aplicar_rls(cur):
+    """
+    Migração 019: habilita RLS (Row-Level Security) em todas as tabelas
+    multi-tenant e cria políticas de isolamento por `empresa_id`.
+
+    Retorna o número de "passos aplicados" para contabilizar como migrações.
+    Como a operação é idempotente, usamos uma flag em config.configuracoes
+    para evitar recriar policies repetidamente.
+    """
+    cur.execute("SELECT to_regclass('config.configuracoes')")
+    if cur.fetchone()[0] is None:
+        return 0
+
+    cur.execute("""
+        SELECT valor FROM config.configuracoes WHERE chave = 'rls_aplicado_v1'
+    """)
+    row = cur.fetchone()
+    if row and row[0] == 'true':
+        return 0
+
+    # Tabelas com coluna empresa_id direta (politicas simples)
+    tabelas_diretas = [
+        ('rh', 'times'),
+        ('rh', 'responsaveis'),
+        ('projeto', 'projetos'),
+        ('projeto', 'epicos'),
+        ('projeto', 'features'),
+        ('projeto', 'historias'),
+        ('projeto', 'tarefas_hierarquicas'),
+        ('projeto', 'subtarefas'),
+        ('projeto', 'work_items'),
+    ]
+    for schema, tabela in tabelas_diretas:
+        cur.execute(f"""
+            DO $$ BEGIN
+                ALTER TABLE {schema}.{tabela} ENABLE ROW LEVEL SECURITY;
+            EXCEPTION WHEN OTHERS THEN NULL; END $$;
+        """)
+        policy_name = f"{tabela}_isolamento"
+        cur.execute(f"""
+            DROP POLICY IF EXISTS {policy_name} ON {schema}.{tabela};
+        """)
+        cur.execute(f"""
+            CREATE POLICY {policy_name} ON {schema}.{tabela}
+            FOR ALL
+            USING (
+                empresa_id IS NULL
+                OR current_setting('app.current_empresa_id', true) IS NULL
+                OR empresa_id = current_setting('app.current_empresa_id', true)::uuid
+            )
+            WITH CHECK (
+                empresa_id IS NULL
+                OR current_setting('app.current_empresa_id', true) IS NULL
+                OR empresa_id = current_setting('app.current_empresa_id', true)::uuid
+            );
+        """)
+
+    # Tabelas core.empresas (isolamento pelo próprio id)
+    cur.execute("DO $$ BEGIN ALTER TABLE core.empresas ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;")
+    cur.execute("DROP POLICY IF EXISTS empresas_isolamento ON core.empresas;")
+    cur.execute("""
+        CREATE POLICY empresas_isolamento ON core.empresas
+        FOR ALL
+        USING (
+            current_setting('app.current_empresa_id', true) IS NULL
+            OR id = current_setting('app.current_empresa_id', true)::uuid
+        )
+        WITH CHECK (
+            current_setting('app.current_empresa_id', true) IS NULL
+            OR id = current_setting('app.current_empresa_id', true)::uuid
+        );
+    """)
+
+    # Tabelas com associação indireta (checam via FK)
+    associativas = [
+        ('rh', 'ferias', 'responsavel_id', 'rh', 'responsaveis'),
+        ('rh', 'responsaveis_times', 'responsavel_id', 'rh', 'responsaveis'),
+        ('projeto', 'work_item_types', 'projeto_id', 'projeto', 'projetos'),
+        ('projeto', 'work_item_atividades', 'work_item_id', 'projeto', 'work_items'),
+        ('projeto', 'custom_fields', 'projeto_id', 'projeto', 'projetos'),
+        ('projeto', 'custom_field_values', 'work_item_id', 'projeto', 'work_items'),
+        ('projeto', 'kanban_colunas', 'projeto_id', 'projeto', 'projetos'),
+        ('projeto', 'projeto_configuracoes', 'projeto_id', 'projeto', 'projetos'),
+        ('projeto', 'planilha_colunas_config', 'projeto_id', 'projeto', 'projetos'),
+        ('projeto', 'planilha_campos_custom', 'projeto_id', 'projeto', 'projetos'),
+        ('projeto', 'planilha_epicos', 'projeto_id', 'projeto', 'projetos'),
+        ('projeto', 'tarefas', 'projeto_id', 'projeto', 'projetos'),
+    ]
+    for (schema, tabela, fk_col, ref_schema, ref_tabela) in associativas:
+        cur.execute(f"DO $$ BEGIN ALTER TABLE {schema}.{tabela} ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;")
+        policy_name = f"{tabela}_isolamento"
+        cur.execute(f"DROP POLICY IF EXISTS {policy_name} ON {schema}.{tabela};")
+        cur.execute(f"""
+            CREATE POLICY {policy_name} ON {schema}.{tabela}
+            FOR ALL
+            USING (
+                current_setting('app.current_empresa_id', true) IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM {ref_schema}.{ref_tabela} ref
+                    WHERE ref.id = {schema}.{tabela}.{fk_col}
+                      AND (
+                          ref.empresa_id IS NULL
+                          OR ref.empresa_id = current_setting('app.current_empresa_id', true)::uuid
+                      )
+                )
+            );
+        """)
+
+    # Tabelas públicas (config)
+    for schema, tabela in [('config', 'configuracoes'), ('config', 'feriados_customizados')]:
+        cur.execute(f"DO $$ BEGIN ALTER TABLE {schema}.{tabela} ENABLE ROW LEVEL SECURITY; EXCEPTION WHEN OTHERS THEN NULL; END $$;")
+        cur.execute(f"DROP POLICY IF EXISTS {tabela}_publicas ON {schema}.{tabela};")
+        cur.execute(f"""
+            CREATE POLICY {tabela}_publicas ON {schema}.{tabela}
+            FOR ALL USING (true) WITH CHECK (true);
+        """)
+
+    # Marca flag para não reexecutar
+    cur.execute("""
+        INSERT INTO config.configuracoes (chave, valor)
+        VALUES ('rls_aplicado_v1', 'true')
+        ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor;
+    """)
+
+    print("[MIGRAÇÃO 019] RLS / políticas por empresa_id aplicadas com sucesso.")
+    return 1
+
+
 def executar_migracoes():
     """
     Verifica e aplica migrações necessárias no banco de dados.
@@ -728,6 +856,11 @@ def executar_migracoes():
             PRIMARY KEY (tarefa_pk_id, campo_id)
         """):
             migracoes_aplicadas += 1
+
+        # ---------------------------------------------------------------
+        # Migração 019: RLS (Row-Level Security) por empresa_id
+        # ---------------------------------------------------------------
+        migracoes_aplicadas += _aplicar_rls(cur)
 
     db.commit()
 

@@ -11,6 +11,7 @@ def create_app():
 
     # --- CONFIGURAÇÕES ---
     app.config['SECRET_KEY'] = config.SECRET_KEY
+    app.jinja_env.add_extension('jinja2.ext.do')
     
     # --- INICIALIZAÇÃO DO BANCO DE DADOS ---
     database.init_app(app)

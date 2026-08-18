@@ -1,5 +1,87 @@
 {% extends 'base.html' %}
 
+{# -------------------------------------------------------------
+   MACRO RECURSIVA: HierarchicalNode
+   (definida no TOP LEVEL, fora de blocos, para ficar escopo global)
+   Recebe um item e seu tipo e renderiza o nó + seus filhos.
+   O item deve ter as chaves esperadas de acordo com seu tipo:
+     epico    -> features[], (tarefas_extraordinarias[] opc.)
+     feature  -> historias[]
+     historia -> tarefas[]
+     tarefa   -> subtarefas[]
+------------------------------------------------------------- #}
+{% macro HierarchicalNode(item, tipo, empresa_id, project_id, responsaveis) %}
+  {% set tipo_cls = {'epico':'epic','feature':'feature','historia':'story','tarefa':'task','subtarefa':'subtask'}[tipo] %}
+  {% set border_cls = {'epico':'border-purple-200 bg-purple-50/50',
+                       'feature':'border-orange-200 bg-orange-50/40',
+                       'historia':'border-blue-200 bg-blue-50/40',
+                       'tarefa':'border-emerald-200 bg-emerald-50/40',
+                       'subtarefa':'border-gray-200 bg-gray-50'}[tipo] %}
+  {% set badge_label = {'epico':'Épico','feature':'Feature','historia':'História','tarefa':'Tarefa','subtarefa':'Subtarefa'}[tipo] %}
+
+  {# Determina os filhos para próximo nível (usando {% do %} para mutar in-place,
+     que agora é suportado pela extensão jinja2.ext.do ativada em app/__init__.py) #}
+  {% set filhos = [] %}
+  {% if tipo == 'epico' %}
+    {% for f in item.features %}
+      {% do filhos.append( ('feature', f) ) %}
+    {% endfor %}
+    {% for t in item.tarefas_extraordinarias %}
+      {% do filhos.append( ('tarefa', t) ) %}
+    {% endfor %}
+  {% elif tipo == 'feature' %}
+    {% for h in item.historias %}{% do filhos.append( ('historia', h) ) %}{% endfor %}
+  {% elif tipo == 'historia' %}
+    {% for t in item.tarefas %}{% do filhos.append( ('tarefa', t) ) %}{% endfor %}
+  {% elif tipo == 'tarefa' %}
+    {% for s in item.subtarefas %}{% do filhos.append( ('subtarefa', s) ) %}{% endfor %}
+  {% endif %}
+
+  <div class="hnode border {{ border_cls }} rounded-xl overflow-hidden"
+       data-hnode data-hnode-tipo="{{ tipo }}" data-hnode-id="{{ item.id }}">
+
+    <div class="p-{{ '4' if tipo == 'epico' else '3' }} hnode-row">
+      <div class="hnode-left min-w-0">
+        <span class="tipo-badge tipo-{{ tipo_cls }} shrink-0">{{ badge_label }}</span>
+        {% if tipo == 'tarefa' and item.is_extraordinaria %}
+          <span class="hnode-extra-flag shrink-0">Extra</span>
+        {% endif %}
+        <span class="hnode-titulo font-{{ 'bold' if tipo in ['epico','feature'] else 'semibold' }} text-slate-800 truncate"
+              data-hnode-titulo title="Clique duplo para renomear">{{ item.titulo }}</span>
+
+        {% if tipo == 'historia' and item.pontos %}
+          <span class="text-xs text-slate-400 shrink-0">({{ item.pontos }} pts)</span>
+        {% endif %}
+        {% if tipo == 'tarefa' and item.sprint %}
+          <span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full shrink-0">Sprint: {{ item.sprint }}</span>
+        {% endif %}
+        {% if item.descricao %}
+          <span class="text-xs text-slate-500 truncate hidden sm:inline">{{ item.descricao }}</span>
+        {% endif %}
+      </div>
+      <div class="hnode-right shrink-0">
+        <button class="hnode-btn" type="button" data-action="adicionar-filho" title="Adicionar sub-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        </button>
+        <button class="hnode-btn" type="button" data-action="abrir-menu" title="Opções">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="12" cy="19" r="1.75"/></svg>
+        </button>
+        <button class="hnode-btn danger" type="button" data-action="excluir-item" title="Excluir e filhos em cascata">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6M14 11v6"></path><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path></svg>
+        </button>
+      </div>
+    </div>
+
+    {% if filhos|length > 0 %}
+    <div class="pl-6 pr-4 py-3 tree-line ml-6 space-y-3">
+      {% for ftipo, fitem in filhos %}
+        {{ HierarchicalNode(fitem, ftipo, empresa_id, project_id, responsaveis) }}
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+{% endmacro %}
+
 {% block head %}
 <style>
     .tipo-badge { font-size: 0.65rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 999px; text-transform: uppercase; }
@@ -8,17 +90,45 @@
     .tipo-story { background: #dbeafe; color: #2563eb; }
     .tipo-task { background: #d1fae5; color: #059669; }
     .tipo-subtask { background: #f3f4f6; color: #4b5563; }
+    .tipo-extra { background: #fee2e2; color: #b91c1c; }
     .tree-line { border-left: 2px solid #e2e8f0; }
+
+    .hnode-row { display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
+    .hnode-row > .hnode-left { min-width:0; display:flex; align-items:center; gap:.5rem; flex:1; }
+    .hnode-row > .hnode-right { display:flex; align-items:center; gap:.25rem; }
+    .hnode-btn { appearance:none; border:0; background:transparent; color:#64748b;
+                 width:1.8rem; height:1.8rem; border-radius:.5rem; display:inline-flex;
+                 align-items:center; justify-content:center; font-weight:700; cursor:pointer;
+                 transition:.15s all; }
+    .hnode-btn:hover { background:#f1f5f9; color:#0f172a; }
+    .hnode-btn.danger:hover { background:#fef2f2; color:#dc2626; }
+    .hnode-titulo { cursor:text; padding: .15rem .25rem; border-radius: .25rem; }
+    .hnode-titulo:hover { background:#f8fafc; }
+    .hnode-extra-flag { font-size:.6rem; padding:.1rem .3rem; border-radius:999px; background:#fee2e2; color:#b91c1c; text-transform:uppercase; font-weight:700; }
+
+    dialog.modal-config::backdrop { background: rgba(15,23,42,.35); backdrop-filter: blur(2px); }
+    dialog.modal-config { border: 0; border-radius: 1rem; padding: 0; box-shadow: 0 20px 50px rgba(15,23,42,.25); width: min(92vw, 32rem); }
+    dialog.modal-config form { padding: 1.25rem 1.5rem; }
+    .modal-header { padding-bottom: .75rem; margin-bottom: .25rem; border-bottom: 1px solid #e2e8f0;}
+    .modal-header h3 { font-size: 1rem; font-weight: 700; color: #0f172a; }
+    .modal-footer { display:flex; justify-content:flex-end; gap:.5rem; margin-top:1rem; padding-top:.75rem; border-top:1px solid #e2e8f0; }
+    .btn-primary { background:#2563eb; color:#fff; padding:.5rem 1rem; border-radius:.5rem; font-weight:600; border:0; cursor:pointer; }
+    .btn-primary:hover { background:#1d4ed8; }
+    .btn-primary:disabled { background:#cbd5e1; cursor:not-allowed; }
+    .btn-secondary { background:#f1f5f9; color:#334155; padding:.5rem 1rem; border-radius:.5rem; font-weight:600; border:1px solid #e2e8f0; cursor:pointer; }
+    .btn-secondary:hover { background:#e2e8f0; }
+    .input-field { border:1px solid #e2e8f0; border-radius:.5rem; padding:.5rem .75rem; outline:none; transition:.15s; }
+    .input-field:focus { border-color:#2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
 </style>
 {% endblock %}
 
 {% block content %}
 <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0 shadow-sm z-10">
     <div>
-        <h1 class="text-lg font-bold text-slate-800">🌳 Hierarquia do Projeto</h1>
+        <h1 class="text-lg font-bold text-slate-800">🌳 Estrutura Hierárquica do Projeto</h1>
         <p class="text-xs text-slate-500 capitalize">{{ empresa.nome }} — {{ project_id }}</p>
     </div>
-<div class="flex items-center gap-3">
+    <div class="flex items-center gap-3">
         <a href="{{ url_for('main.hierarquia_backlog', empresa_id=empresa_id, project_id=project_id) }}" class="text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-lg text-sm font-medium border border-blue-200 whitespace-nowrap">📋 Ver Backlog</a>
         <a href="{{ url_for('main.empresas') }}" class="text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200">Voltar</a>
     </div>
@@ -27,7 +137,7 @@
 <div class="flex-1 overflow-auto p-6">
     <div class="max-w-5xl mx-auto space-y-6">
 
-        <!-- Formulário: Novo Épico -->
+        <!-- Formulário: Novo Épico (ainda mantém criação rápida no topo) -->
         <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
             <h2 class="text-lg font-bold text-slate-800 mb-4">+ Novo Épico</h2>
             <form action="{{ url_for('main.hierarquia_adicionar_epico', empresa_id=empresa_id, project_id=project_id) }}" method="POST" class="flex flex-wrap gap-3 items-end">
@@ -41,101 +151,43 @@
                 </div>
                 <button type="submit" class="btn-primary">Criar Épico</button>
             </form>
+            <p class="mt-3 text-xs text-slate-500">
+              💡 <strong>Dica:</strong> use o botão <kbd class="px-1.5 py-0.5 bg-slate-100 rounded border text-[10px] font-bold">+</kbd> em cada item para criar filhos diretos,
+              dê <strong>duplo-clique</strong> no título para renomear, e use o menu <kbd class="px-1.5 py-0.5 bg-slate-100 rounded border text-[10px] font-bold">⋮</kbd> para alterar o tipo ou renomear.
+            </p>
         </div>
 
-        <!-- Lista Hierárquica -->
+        <!-- Lista Hierárquica via macro recursiva -->
         <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
             <h2 class="text-lg font-bold text-slate-800 mb-4">Estrutura ({{ hierarquia|length }} épicos)</h2>
             {% if hierarquia %}
             <div class="space-y-4">
                 {% for epico in hierarquia %}
-                <!-- ÉPICO -->
-                <div class="border border-purple-200 rounded-xl overflow-hidden">
-                    <div class="bg-purple-50/50 p-4 flex items-center justify-between">
-                        <div class="flex items-center gap-3 flex-1 min-w-0">
-                            <span class="tipo-badge tipo-epic">Épico</span>
-                            <span class="font-bold text-slate-800">{{ epico.titulo }}</span>
-                            {% if epico.descricao %}<span class="text-xs text-slate-500 truncate">{{ epico.descricao }}</span>{% endif %}
-                        </div>
-                        <form action="{{ url_for('main.hierarquia_excluir_epico', empresa_id=empresa_id, project_id=project_id, item_id=epico.id) }}" method="POST" onsubmit="return confirm('Excluir épico e todo o subtree?');">
-                            <button class="text-red-400 hover:text-red-600 text-xs font-medium px-2 py-1 hover:bg-red-50 rounded">Excluir</button>
-                        </form>
-                    </div>
-
-                    <!-- Features dentro do épico -->
-                    <div class="pl-6 pr-4 py-3 tree-line ml-6 space-y-3">
-                        {% for feature in epico.features %}
-                        <div class="border border-orange-200 rounded-lg">
-                            <div class="bg-orange-50/40 p-3 flex items-center justify-between">
-                                <div class="flex items-center gap-2 flex-1 min-w-0">
-                                    <span class="tipo-badge tipo-feature">Feature</span>
-                                    <span class="font-semibold text-slate-800">{{ feature.titulo }}</span>
-                                </div>
-                                <form action="{{ url_for('main.hierarquia_excluir_feature', empresa_id=empresa_id, project_id=project_id, item_id=feature.id) }}" method="POST" onsubmit="return confirm('Excluir feature e todo o subtree?');">
-                                    <button class="text-red-400 hover:text-red-600 text-xs font-medium px-2 py-1 hover:bg-red-50 rounded">Excluir</button>
-                                </form>
-                            </div>
-                            <!-- Histórias dentro da feature -->
-                            <div class="pl-6 pr-4 py-2 tree-line ml-6 space-y-2">
-                                {% for historia in feature.historias %}
-                                <div class="border border-blue-200 rounded-lg">
-                                    <div class="bg-blue-50/40 p-3 flex items-center justify-between">
-                                        <div class="flex items-center gap-2 flex-1 min-w-0">
-                                            <span class="tipo-badge tipo-story">História</span>
-                                            <span class="font-medium text-slate-800">{{ historia.titulo }}</span>
-                                            {% if historia.pontos %}<span class="text-xs text-slate-400">({{ historia.pontos }} pts)</span>{% endif %}
-                                        </div>
-                                        <form action="{{ url_for('main.hierarquia_excluir_historia', empresa_id=empresa_id, project_id=project_id, item_id=historia.id) }}" method="POST" onsubmit="return confirm('Excluir história?');">
-                                            <button class="text-red-400 hover:text-red-600 text-xs font-medium px-2 py-1 hover:bg-red-50 rounded">Excluir</button>
-                                        </form>
-                                    </div>
-                                    <!-- Tarefas dentro da história -->
-                                    <div class="pl-6 pr-4 py-2 tree-line ml-6 space-y-2">
-                                        {% for tarefa in historia.tarefas %}
-                                        <div class="border border-emerald-200 rounded-lg">
-                                            <div class="bg-emerald-50/40 p-3 flex items-center justify-between">
-                                                <div class="flex items-center gap-2 flex-1 min-w-0">
-                                                    <span class="tipo-badge tipo-task">Tarefa</span>
-                                                    <span class="font-medium text-slate-800">{{ tarefa.titulo }}</span>
-                                                    {% if tarefa.sprint %}<span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Sprint: {{ tarefa.sprint }}</span>{% endif %}
-                                                </div>
-                                                <form action="{{ url_for('main.hierarquia_excluir_tarefa', empresa_id=empresa_id, project_id=project_id, item_id=tarefa.id) }}" method="POST" onsubmit="return confirm('Excluir tarefa e subtarefas?');">
-                                                    <button class="text-red-400 hover:text-red-600 text-xs font-medium px-2 py-1 hover:bg-red-50 rounded">Excluir</button>
-                                                </form>
-                                            </div>
-                                            <!-- Subtarefas -->
-                                            {% if tarefa.subtarefas %}
-                                            <div class="pl-6 pr-4 py-2 tree-line ml-6 space-y-1">
-                                                {% for sub in tarefa.subtarefas %}
-                                                <div class="flex items-center justify-between bg-gray-50 border border-gray-200 rounded px-3 py-1.5">
-                                                    <div class="flex items-center gap-2">
-                                                        <span class="tipo-badge tipo-subtask">Subtarefa</span>
-                                                        <span class="text-sm text-slate-700">{{ sub.titulo }}</span>
-                                                    </div>
-                                                    <form action="{{ url_for('main.hierarquia_excluir_subtarefa', empresa_id=empresa_id, project_id=project_id, item_id=sub.id) }}" method="POST" onsubmit="return confirm('Excluir subtarefa?');">
-                                                        <button class="text-red-400 hover:text-red-600 text-xs px-1">✕</button>
-                                                    </form>
-                                                </div>
-                                                {% endfor %}
-                                            </div>
-                                            {% endif %}
-                                        </div>
-                                        {% endfor %}
-                                    </div>
-                                </div>
-                                {% endfor %}
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
+                    {{ HierarchicalNode(epico, 'epico', empresa_id, project_id, responsaveis) }}
                 {% endfor %}
             </div>
             {% else %}
             <p class="text-sm text-slate-500 text-center py-8">Nenhum épico neste projeto. Crie um épico acima para montar a hierarquia.</p>
             {% endif %}
         </div>
-
     </div>
 </div>
+
+{# -- Mapa de URLs usado pelo JS hierarquia.js -- #}
+<script>
+  window.HIERARQUIA_URLS = {
+    renomear:      {{ url_for('main.hierarquia_renomear',       empresa_id=empresa_id, project_id=project_id)|tojson }},
+    contar_filhos: {{ url_for('main.hierarquia_contar_filhos_excluir', empresa_id=empresa_id, project_id=project_id)|tojson }},
+    alterar_tipo:  {{ url_for('main.hierarquia_alterar_tipo',    empresa_id=empresa_id, project_id=project_id)|tojson }},
+    criar_subitem: {{ url_for('main.hierarquia_criar_subitem',   empresa_id=empresa_id, project_id=project_id)|tojson }},
+
+    {# URLs de exclusão (POST / formulário) - placeholders serão substituídos no JS #}
+    excluir_epico:     "{{ url_for('main.hierarquia_excluir_epico',     empresa_id=empresa_id, project_id=project_id, item_id='__ITEM_ID__') }}",
+    excluir_feature:   "{{ url_for('main.hierarquia_excluir_feature',   empresa_id=empresa_id, project_id=project_id, item_id='__ITEM_ID__') }}",
+    excluir_historia:  "{{ url_for('main.hierarquia_excluir_historia',  empresa_id=empresa_id, project_id=project_id, item_id='__ITEM_ID__') }}",
+    excluir_tarefa:    "{{ url_for('main.hierarquia_excluir_tarefa',    empresa_id=empresa_id, project_id=project_id, item_id='__ITEM_ID__') }}",
+    excluir_subtarefa: "{{ url_for('main.hierarquia_excluir_subtarefa', empresa_id=empresa_id, project_id=project_id, item_id='__ITEM_ID__') }}"
+  };
+</script>
+<script src="{{ url_for('static', filename='hierarquia.js') }}"></script>
 {% endblock %}

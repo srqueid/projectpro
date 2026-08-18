@@ -535,7 +535,7 @@ def carregar_config_planilha(project_id):
         campos = [dict(row) for row in cur.fetchall()]
 
         cur.execute("SELECT tarefa_pk_id FROM projeto.planilha_epicos WHERE projeto_id = %s", (project_id,))
-        epicos = {str(row['tarefa_pk_id']) for row in cur.fetchall()}
+        epicos = [str(row['tarefa_pk_id']) for row in cur.fetchall()]
 
     return {'colunas': colunas, 'campos': campos, 'epicos': epicos}
 
@@ -590,17 +590,17 @@ def carregar_valores_custom(tarefa_ids):
     with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute(
             """
-            SELECT vc.tarefa_id, vc.campo_id, c.nome, c.tipo, vc.valor_texto, vc.valor_data, vc.valor_numerico
+            SELECT vc.tarefa_pk_id, vc.campo_id, c.nome, c.tipo, vc.valor_texto, vc.valor_data, vc.valor_numerico
             FROM projeto.planilha_valores_custom vc
             JOIN projeto.planilha_campos_custom c ON c.id = vc.campo_id
-            WHERE vc.tarefa_id = ANY(%s)
+            WHERE vc.tarefa_pk_id = ANY(%s)
             """,
             (list(tarefa_ids),)
         )
         rows = [dict(row) for row in cur.fetchall()]
     result = {}
     for row in rows:
-        tid = str(row['tarefa_id'])
+        tid = str(row['tarefa_pk_id'])
         if tid not in result:
             result[tid] = {}
         result[tid][row['nome']] = {
@@ -621,25 +621,25 @@ def salvar_valores_custom(project_id, tarefa_id, valores):
             val = valores.get(campo_id)
             if val is None or val == '':
                 cur.execute(
-                    "DELETE FROM projeto.planilha_valores_custom WHERE tarefa_id = %s AND campo_id = %s",
+                    "DELETE FROM projeto.planilha_valores_custom WHERE tarefa_pk_id = %s AND campo_id = %s",
                     (tarefa_id, campo_id)
                 )
             else:
                 if tipo == 'texto' or tipo == 'texto_longo':
                     cur.execute(
                         """
-                        INSERT INTO projeto.planilha_valores_custom (tarefa_id, campo_id, valor_texto)
+                        INSERT INTO projeto.planilha_valores_custom (tarefa_pk_id, campo_id, valor_texto)
                         VALUES (%s, %s, %s)
-                        ON CONFLICT (tarefa_id, campo_id) DO UPDATE SET valor_texto = EXCLUDED.valor_texto
+                        ON CONFLICT (tarefa_pk_id, campo_id) DO UPDATE SET valor_texto = EXCLUDED.valor_texto
                         """,
                         (tarefa_id, campo_id, val)
                     )
                 elif tipo == 'data':
                     cur.execute(
                         """
-                        INSERT INTO projeto.planilha_valores_custom (tarefa_id, campo_id, valor_data)
+                        INSERT INTO projeto.planilha_valores_custom (tarefa_pk_id, campo_id, valor_data)
                         VALUES (%s, %s, %s)
-                        ON CONFLICT (tarefa_id, campo_id) DO UPDATE SET valor_data = EXCLUDED.valor_data
+                        ON CONFLICT (tarefa_pk_id, campo_id) DO UPDATE SET valor_data = EXCLUDED.valor_data
                         """,
                         (tarefa_id, campo_id, val)
                     )
@@ -650,9 +650,9 @@ def salvar_valores_custom(project_id, tarefa_id, valores):
                         num = None
                     cur.execute(
                         """
-                        INSERT INTO projeto.planilha_valores_custom (tarefa_id, campo_id, valor_numerico)
+                        INSERT INTO projeto.planilha_valores_custom (tarefa_pk_id, campo_id, valor_numerico)
                         VALUES (%s, %s, %s)
-                        ON CONFLICT (tarefa_id, campo_id) DO UPDATE SET valor_numerico = EXCLUDED.valor_numerico
+                        ON CONFLICT (tarefa_pk_id, campo_id) DO UPDATE SET valor_numerico = EXCLUDED.valor_numerico
                         """,
                         (tarefa_id, campo_id, num)
                     )
@@ -669,17 +669,17 @@ def carregar_tarefas_planilha(project_id):
         ids = [t['id'] for t in tarefas]
         cur.execute(
             """
-            SELECT vc.tarefa_id, c.nome, c.tipo, vc.valor_texto, vc.valor_data, vc.valor_numerico
+            SELECT vc.tarefa_pk_id, c.nome, c.tipo, vc.valor_texto, vc.valor_data, vc.valor_numerico
             FROM projeto.planilha_valores_custom vc
             JOIN projeto.planilha_campos_custom c ON c.id = vc.campo_id
-            WHERE vc.tarefa_id = ANY(%s)
+            WHERE vc.tarefa_pk_id = ANY(%s)
             """,
             (ids,)
         )
         rows = [dict(row) for row in cur.fetchall()]
     valores_por_tarefa = {}
     for row in rows:
-        tid = str(row['tarefa_id'])
+        tid = str(row['tarefa_pk_id'])
         if tid not in valores_por_tarefa:
             valores_por_tarefa[tid] = {}
         valores_por_tarefa[tid][row['nome']] = {
@@ -1367,10 +1367,12 @@ def carregar_hierarquia_completa(empresa_id, projeto_id, apenas_backlog=False):
         if epico_id not in epicos_map:
             epicos_map[epico_id] = {
                 'id': epico_id, 'titulo': r['epico_titulo'], 'descricao': r['epico_descricao'],
-                'status': r['epico_status'], 'projeto_id': r['projeto_id'], 'features': []
+                'status': r['epico_status'], 'projeto_id': r['projeto_id'],
+                'features': [], 'tarefas_extraordinarias': []
             }
         epico = epicos_map[epico_id]
-        if r['feature_id']:
+        is_extra = bool(r['is_extraordinaria'])
+        if r['feature_id'] and not is_extra:
             feat = next((x for x in epico['features'] if x['id'] == r['feature_id']), None)
             if not feat:
                 feat = {'id': r['feature_id'], 'titulo': r['feature_titulo'], 'status': r['feature_status'], 'historias': []}
@@ -1390,6 +1392,16 @@ def carregar_hierarquia_completa(empresa_id, projeto_id, apenas_backlog=False):
                         hist['tarefas'].append(tarefa)
                     if r['subtarefa_id']:
                         tarefa['subtarefas'].append({'id': r['subtarefa_id'], 'titulo': r['subtarefa_titulo'], 'concluida': r['concluida']})
+        elif r['tarefa_id'] and is_extra:
+            # Tarefa extraordinária direto no épico
+            tarefa = next((x for x in epico['tarefas_extraordinarias'] if x['id'] == r['tarefa_id']), None)
+            if not tarefa:
+                tarefa = {'id': r['tarefa_id'], 'titulo': r['tarefa_titulo'], 'is_extraordinaria': True,
+                          'status': r['tarefa_status'], 'conclusao': r['conclusao'], 'responsavel_id': r['responsavel_id'],
+                          'sprint': r['sprint'], 'planejado': r['planejado'], 'subtarefas': []}
+                epico['tarefas_extraordinarias'].append(tarefa)
+            if r['subtarefa_id']:
+                tarefa['subtarefas'].append({'id': r['subtarefa_id'], 'titulo': r['subtarefa_titulo'], 'concluida': r['concluida']})
 
     return list(epicos_map.values())
 
@@ -1645,4 +1657,392 @@ def excluir_subtarefa(empresa_id, subtarefa_id):
     with db.cursor() as cur:
         cur.execute("DELETE FROM projeto.subtarefas WHERE id = %s AND empresa_id = %s", (subtarefa_id, empresa_id))
     db.commit()
+
+
+# Mapeamento reverso: tipo_label -> tabela + coluna_titulo
+_TABELAS_HIERARQUIA = {
+    'epico':    ('projeto.epicos',               'titulo'),
+    'feature':  ('projeto.features',             'titulo'),
+    'historia': ('projeto.historias',            'titulo'),
+    'tarefa':   ('projeto.tarefas_hierarquicas', 'titulo'),
+    'subtarefa':('projeto.subtarefas',           'titulo'),
+}
+
+# Níveis hierárquicos (menor = mais alto na árvore)
+_NIVEL_TIPO = {
+    'epico':    1,
+    'feature':  2,
+    'historia': 3,
+    'tarefa':   4,
+    'subtarefa':5,
+}
+
+# Tipos permitidos para cada nó (quais filhos podem ser criados diretamente sob ele)
+_TIPOS_FILHO_PERMITIDOS = {
+    'epico':    ['feature', 'tarefa'],   # feature OU tarefa extraordinária
+    'feature':  ['historia'],
+    'historia': ['tarefa'],
+    'tarefa':   ['subtarefa'],
+    'subtarefa': [],
+}
+
+
+def obter_item_hierarquico_por_id(empresa_id, tipo, item_id):
+    """
+    Busca um item hierárquico pelo tipo e id.
+    Retorna dict com o item (inclui colunas relevantes como epico_id, feature_id,
+    historia_id, tarefa_id) ou None.
+    """
+    if tipo not in _TABELAS_HIERARQUIA:
+        return None
+    tabela, _ = _TABELAS_HIERARQUIA[tipo]
+    db = database.get_db()
+    with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute(
+            f"SELECT * FROM {tabela} WHERE id = %s AND empresa_id = %s",
+            (item_id, empresa_id)
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def renomear_item(empresa_id, tipo, item_id, novo_titulo):
+    """Atualiza o título de um item hierárquico de qualquer nível."""
+    if tipo not in _TABELAS_HIERARQUIA:
+        raise ValueError(f"Tipo hierárquico desconhecido: {tipo}")
+    if not novo_titulo or not str(novo_titulo).strip():
+        raise ValueError("Título não pode ser vazio.")
+    tabela, col_titulo = _TABELAS_HIERARQUIA[tipo]
+    db = database.get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            f"UPDATE {tabela} SET {col_titulo} = %s WHERE id = %s AND empresa_id = %s RETURNING id",
+            (str(novo_titulo).strip(), item_id, empresa_id)
+        )
+        ok = cur.rowcount > 0
+    db.commit()
+    return ok
+
+
+def contar_filhos_afetados(empresa_id, tipo, item_id):
+    """
+    Conta recursivamente quantos itens filhos (sub-tree) serão afetados por
+    uma exclusão ou promoção/mudança de tipo.
+
+    Retorna dict: { feature:int, historia:int, tarefa:int, subtarefa:int, total:int }
+    """
+    item = obter_item_hierarquico_por_id(empresa_id, tipo, item_id)
+    if not item:
+        return None
+    counts = {'epico': 0, 'feature': 0, 'historia': 0, 'tarefa': 0, 'subtarefa': 0, 'total': 0}
+    db = database.get_db()
+    with db.cursor() as cur:
+        if tipo == 'epico':
+            cur.execute("SELECT COUNT(*) FROM projeto.features WHERE epico_id = %s AND empresa_id = %s", (item['id'], empresa_id)); counts['feature'] = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM projeto.historias WHERE epico_id = %s AND empresa_id = %s", (item['id'], empresa_id)); counts['historia'] = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM projeto.tarefas_hierarquicas WHERE epico_id = %s AND empresa_id = %s", (item['id'], empresa_id)); counts['tarefa'] = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM projeto.subtarefas WHERE epico_id = %s AND empresa_id = %s", (item['id'], empresa_id)); counts['subtarefa'] = cur.fetchone()[0]
+        elif tipo == 'feature':
+            cur.execute("SELECT COUNT(*) FROM projeto.historias WHERE feature_id = %s AND empresa_id = %s", (item['id'], empresa_id)); counts['historia'] = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM projeto.tarefas_hierarquicas th JOIN projeto.historias h ON th.historia_id = h.id WHERE h.feature_id = %s AND h.empresa_id = %s", (item['id'], empresa_id)); counts['tarefa'] = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM projeto.subtarefas s JOIN projeto.tarefas_hierarquicas th ON s.tarefa_id = th.id JOIN projeto.historias h ON th.historia_id = h.id WHERE h.feature_id = %s AND h.empresa_id = %s", (item['id'], empresa_id)); counts['subtarefa'] = cur.fetchone()[0]
+        elif tipo == 'historia':
+            cur.execute("SELECT COUNT(*) FROM projeto.tarefas_hierarquicas WHERE historia_id = %s AND empresa_id = %s", (item['id'], empresa_id)); counts['tarefa'] = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM projeto.subtarefas s JOIN projeto.tarefas_hierarquicas th ON s.tarefa_id = th.id WHERE th.historia_id = %s AND th.empresa_id = %s", (item['id'], empresa_id)); counts['subtarefa'] = cur.fetchone()[0]
+        elif tipo == 'tarefa':
+            cur.execute("SELECT COUNT(*) FROM projeto.subtarefas WHERE tarefa_id = %s AND empresa_id = %s", (item['id'], empresa_id)); counts['subtarefa'] = cur.fetchone()[0]
+    counts['total'] = counts['epico'] + counts['feature'] + counts['historia'] + counts['tarefa'] + counts['subtarefa']
+    return counts
+
+
+def _validar_mudanca_de_tipo(empresa_id, tipo_atual, item_id, novo_tipo):
+    """
+    Valida se a mudança de tipo é permitida. Retorna (ok: bool, motivo: str|None,
+    niveis_ok: bool). Uma mudança é válida se todos os filhos atuais caberão
+    abaixo do novo tipo na hierarquia.
+    """
+    if tipo_atual == novo_tipo:
+        return False, "O item já é deste tipo."
+    if novo_tipo not in _NIVEL_TIPO or tipo_atual not in _NIVEL_TIPO:
+        return False, "Tipo inválido."
+    counts = contar_filhos_afetados(empresa_id, tipo_atual, item_id)
+    if not counts:
+        return False, "Item não encontrado."
+    nivel_novo = _NIVEL_TIPO[novo_tipo]
+    # Tipos possíveis de filhos imediatos permitidos no novo tipo:
+    # novo epico     -> filhos diretos podiam ser feature/tarefa
+    # novo feature   -> filhos diretos podiam ser historia
+    # novo historia  -> filhos diretos podiam ser tarefa
+    # novo tarefa    -> filhos diretos podiam ser subtarefa
+    # novo subtarefa -> filhos diretos podiam ser []
+    filhos_permitidos_nivel_max = {
+        'epico':    2,  # feature
+        'feature':  3,  # historia
+        'historia': 4,  # tarefa
+        'tarefa':   5,  # subtarefa
+        'subtarefa':_NIVEL_TIPO[tipo_atual],  # subtarefa não tem filhos
+    }
+    max_nivel_filho_permitido = filhos_permitidos_nivel_max[novo_tipo]
+    # Se o item for promovido para baixo (ex: epico->tarefa) mas tem filhos
+    # que são features/historias, não pode.
+    tem_incompativeis = False
+    for tipo_f, qtd in counts.items():
+        if tipo_f == 'total':
+            continue
+        if qtd > 0:
+            nivel_filho = _NIVEL_TIPO.get(tipo_f, 0)
+            if nivel_filho <= nivel_novo:
+                # um filho de nível igual ou acima do novo pai não cabe
+                tem_incompativeis = True
+            elif nivel_filho > max_nivel_filho_permitido:
+                # ex: virou feature e tem subtarefas diretas em cascata — proibido
+                # (se forem tarefas -> ok, subtarefas -> ok desde que no máximo)
+                pass
+    if tem_incompativeis:
+        return False, "O item possui sub-itens de nível incompatível com o novo tipo."
+    return True, None, True
+
+
+def alterar_tipo_item(empresa_id, tipo_atual, item_id, novo_tipo, novo_pai_id=None):
+    """
+    Altera o tipo hierárquico de um item com transação (BEGIN/COMMIT/ROLLBACK).
+
+    Fluxo:
+      1. Valida compatibilidade de filhos com o novo tipo.
+      2. BEGIN
+      3. Lê os dados do item da tabela atual.
+      4. Insere na nova tabela (gera novo UUID ou preserva? → preserva id copiando).
+         Ajusta flags:
+           - Se virou 'tarefa extraordinária' (novo pai é epico):
+             historia_id = NULL, is_extraordinaria = TRUE.
+           - Se virou 'tarefa' e novo pai é historia:
+             historia_id = pai.id, is_extraordinaria = FALSE.
+      5. Atualiza FKs dos filhos imediatos para apontar para o novo id/lugar.
+      6. DELETE do item na tabela antiga.
+      7. COMMIT.
+
+    Retorna dict { 'ok': bool, 'novo_id': str|None, 'novo_tipo': str, 'erro': str|None }
+    """
+    valido, motivo, *_ = _validar_mudanca_de_tipo(empresa_id, tipo_atual, item_id, novo_tipo)
+    if not valido:
+        return {'ok': False, 'novo_id': None, 'novo_tipo': novo_tipo, 'erro': motivo}
+
+    item_velho = obter_item_hierarquico_por_id(empresa_id, tipo_atual, item_id)
+    if not item_velho:
+        return {'ok': False, 'novo_id': None, 'novo_tipo': novo_tipo, 'erro': 'Item não encontrado.'}
+
+    db = database.get_db()
+    try:
+        db.autocommit = False
+        with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            # ----- Obtenção do contexto do novo pai (se fornecido) -----
+            pai_info = None  # { tipo, epico_id, feature_id, historia_id, tarefa_id }
+            if novo_pai_id and novo_tipo != 'epico':
+                # tenta deduzir tipo do pai por buscas
+                for t_tipo in ('tarefa', 'historia', 'feature', 'epico'):
+                    tbl, _ = _TABELAS_HIERARQUIA[t_tipo]
+                    cur.execute(f"SELECT * FROM {tbl} WHERE id = %s AND empresa_id = %s", (novo_pai_id, empresa_id))
+                    r = cur.fetchone()
+                    if r:
+                        pai_info = {'tipo': t_tipo, **dict(r)}
+                        break
+
+            # ----- Calcula os novos campos epico/feature/historia/tarefa -----
+            # Nível do novo tipo
+            novo_nivel = _NIVEL_TIPO[novo_tipo]
+            epico_id = item_velho.get('epico_id')
+            feature_id = item_velho.get('feature_id')
+            historia_id = item_velho.get('historia_id') if 'historia_id' in item_velho else None
+            tarefa_id_ref = item_velho.get('tarefa_id') if 'tarefa_id' in item_velho else None
+
+            if pai_info:
+                # Garante epico_id/feature_id conforme o pai
+                if pai_info['tipo'] == 'epico':
+                    epico_id = pai_info['id']
+                    feature_id = None
+                    historia_id = None
+                elif pai_info['tipo'] == 'feature':
+                    epico_id = pai_info['epico_id']
+                    feature_id = pai_info['id']
+                    historia_id = None
+                elif pai_info['tipo'] == 'historia':
+                    epico_id = pai_info['epico_id']
+                    feature_id = pai_info['feature_id']
+                    historia_id = pai_info['id']
+                elif pai_info['tipo'] == 'tarefa':
+                    epico_id = pai_info['epico_id']
+                    feature_id = None
+                    # histórico: usaremos a historia da tarefa pai se houver
+                    historia_id = pai_info.get('historia_id')
+
+            # Ajustes de flags para tarefa
+            is_extraordinaria = False
+            if novo_tipo == 'tarefa':
+                if novo_nivel == 4 and historia_id is None:
+                    # Tarefa sem história -> extraordinária
+                    is_extraordinaria = True
+                if historia_id is not None:
+                    is_extraordinaria = False
+
+            titulo = item_velho.get('titulo') or item_velho.get('tarefa') or 'Sem título'
+            descricao = item_velho.get('descricao')
+            status = item_velho.get('status')
+            responsavel_id = item_velho.get('responsavel_id')
+            dias = item_velho.get('dias') or 1
+            conclusao = item_velho.get('conclusao') or 0
+            baseline_inicio = item_velho.get('baseline_inicio')
+            baseline_fim = item_velho.get('baseline_fim')
+            inicio_v = item_velho.get('inicio')
+            fim_v = item_velho.get('fim')
+            kanban_coluna_id = item_velho.get('kanban_coluna_id')
+            sprint = item_velho.get('sprint')
+            planejado = item_velho.get('planejado') or False
+            prioridade = item_velho.get('prioridade') or 'MEDIA'
+
+            novo_id = item_velho['id']  # preserva id
+
+            # ----- Insere na nova tabela -----
+            if novo_tipo == 'epico':
+                # Para épico: precisa de projeto_id
+                projeto_id = item_velho.get('projeto_id')
+                if not projeto_id and 'epico_id' in item_velho and item_velho.get('epico_id'):
+                    cur.execute("SELECT projeto_id FROM projeto.epicos WHERE id = %s AND empresa_id = %s", (item_velho['epico_id'], empresa_id))
+                    r = cur.fetchone()
+                    projeto_id = r[0] if r else None
+                if not projeto_id:
+                    raise ValueError("Não foi possível determinar projeto_id para o novo Épico.")
+                cur.execute("""
+                    INSERT INTO projeto.epicos (id, empresa_id, projeto_id, titulo, descricao, status)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (novo_id, empresa_id, projeto_id, titulo, descricao, status or 'PLANEJADO'))
+
+            elif novo_tipo == 'feature':
+                if not epico_id:
+                    raise ValueError("Feature requer epico_id.")
+                cur.execute("""
+                    INSERT INTO projeto.features (id, empresa_id, epico_id, titulo, descricao, status)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (novo_id, empresa_id, epico_id, titulo, descricao, status or 'EM_ANDAMENTO'))
+
+            elif novo_tipo == 'historia':
+                if not epico_id:
+                    raise ValueError("História requer epico_id.")
+                if not feature_id:
+                    raise ValueError("História requer feature_id.")
+                pontos = item_velho.get('pontos') or 0
+                cur.execute("""
+                    INSERT INTO projeto.historias (id, empresa_id, epico_id, feature_id, titulo, descricao, pontos, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (novo_id, empresa_id, epico_id, feature_id, titulo, descricao, pontos, status or 'A_FAZER'))
+
+            elif novo_tipo == 'tarefa':
+                if not epico_id:
+                    raise ValueError("Tarefa requer epico_id.")
+                cur.execute("""
+                    INSERT INTO projeto.tarefas_hierarquicas
+                        (id, empresa_id, epico_id, historia_id, is_extraordinaria, titulo, descricao, status, prioridade,
+                         responsavel_id, dias, conclusao, baseline_inicio, baseline_fim, inicio, fim, kanban_coluna_id, sprint, planejado)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (novo_id, empresa_id, epico_id, (None if is_extraordinaria else historia_id),
+                      is_extraordinaria, titulo, descricao, status or 'A_FAZER', prioridade,
+                      responsavel_id, dias, conclusao, baseline_inicio, baseline_fim, inicio_v, fim_v,
+                      kanban_coluna_id or 'backlog', sprint, planejado or bool(sprint)))
+
+            elif novo_tipo == 'subtarefa':
+                if not epico_id:
+                    raise ValueError("Subtarefa requer epico_id.")
+                if not tarefa_id_ref and not (pai_info and pai_info['tipo'] == 'tarefa'):
+                    # Reusa uma tarefa existente se for possível; se não, cria uma extraordinária
+                    cur.execute("""
+                        INSERT INTO projeto.tarefas_hierarquicas
+                            (empresa_id, epico_id, historia_id, is_extraordinaria, titulo, kanban_coluna_id)
+                        VALUES (%s, %s, NULL, TRUE, %s, 'backlog') RETURNING id
+                    """, (empresa_id, epico_id, f'Tarefa-Container-{titulo[:30]}'))
+                    tarefa_id_ref = cur.fetchone()[0]
+                elif pai_info and pai_info['tipo'] == 'tarefa':
+                    tarefa_id_ref = pai_info['id']
+                concluida = bool((conclusao or 0) >= 100) or item_velho.get('concluida') or False
+                cur.execute("""
+                    INSERT INTO projeto.subtarefas (id, empresa_id, epico_id, tarefa_id, titulo, concluida)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (novo_id, empresa_id, epico_id, tarefa_id_ref, titulo, concluida))
+
+            # ----- Reatribuição de FKs dos filhos imediatos ao item movido -----
+            # Se movemos um epico -> feature, todos os features antigos perdem o pai
+            # então temos que migrar os filhos imediatos do nível antigo -> novo nível
+            # Por simplicidade, movemos os filhos diretos baseados nas regras de pai.
+            if tipo_atual == 'epico' and novo_tipo == 'feature':
+                # features filhas -> devem ficar abaixo de uma feature? Não permitido.
+                # Como a validação anterior bloqueou este caso com filhos, basta
+                # garantir que historias/tarefas migraram seus epico_id e feature_id.
+                cur.execute("UPDATE projeto.historias SET feature_id = %s WHERE epico_id = %s AND empresa_id = %s AND feature_id IS NULL", (novo_id, novo_id, empresa_id))
+                cur.execute("UPDATE projeto.tarefas_hierarquicas SET epico_id = %s WHERE epico_id = %s AND empresa_id = %s", (epico_id, novo_id, empresa_id))
+
+            if tipo_atual == 'feature' and novo_tipo == 'historia':
+                cur.execute("UPDATE projeto.tarefas_hierarquicas SET historia_id = %s WHERE epico_id = %s AND historia_id IN (SELECT id FROM projeto.historias WHERE feature_id = %s AND empresa_id = %s)", (novo_id, epico_id, novo_id, empresa_id))
+
+            # ----- DELETE do item na tabela antiga -----
+            tabela_velha, _ = _TABELAS_HIERARQUIA[tipo_atual]
+            cur.execute(f"DELETE FROM {tabela_velha} WHERE id = %s AND empresa_id = %s", (item_id, empresa_id))
+
+            db.commit()
+            return {'ok': True, 'novo_id': str(novo_id), 'novo_tipo': novo_tipo, 'erro': None}
+    except Exception as e:
+        try: db.rollback()
+        except Exception: pass
+        return {'ok': False, 'novo_id': None, 'novo_tipo': novo_tipo, 'erro': str(e)}
+    finally:
+        try: db.autocommit = True
+        except Exception: pass
+
+
+def criar_subitem_hierarquico(empresa_id, projeto_id, tipo_pai, pai_id, tipo_filho, titulo, **extras):
+    """
+    Cria um filho direto de um item hierárquico usando o botão + contextual.
+    Valida que o tipo_filho é permitido sob o tipo_pai.
+    Retorna novo_id ou None em caso de erro.
+    """
+    if tipo_filho not in _TIPOS_FILHO_PERMITIDOS.get(tipo_pai, []):
+        raise ValueError(f"Não é possível criar '{tipo_filho}' diretamente sob '{tipo_pai}'.")
+    titulo = (titulo or '').strip()
+    if not titulo:
+        raise ValueError("Título é obrigatório.")
+
+    if tipo_filho == 'feature':
+        return adicionar_feature(empresa_id, pai_id, titulo, extras.get('descricao'))
+
+    if tipo_filho == 'historia':
+        pai = obter_feature_por_id(empresa_id, pai_id)
+        if not pai:
+            raise ValueError("Feature pai não encontrada.")
+        return adicionar_historia(empresa_id, pai['epico_id'], pai_id, titulo, extras.get('descricao'), extras.get('pontos') or 0)
+
+    if tipo_filho == 'tarefa':
+        # tarefa extraordinária (direto do epico) OU tarefa normal (sob historia)
+        if tipo_pai == 'epico':
+            return adicionar_tarefa_hierarquica(
+                empresa_id, pai_id, None, titulo,
+                is_extraordinaria=True, descricao=extras.get('descricao'),
+                responsavel_id=extras.get('responsavel_id'), dias=extras.get('dias') or 1,
+                sprint=extras.get('sprint')
+            )
+        if tipo_pai == 'historia':
+            pai = obter_historia_por_id(empresa_id, pai_id)
+            if not pai:
+                raise ValueError("História pai não encontrada.")
+            return adicionar_tarefa_hierarquica(
+                empresa_id, pai['epico_id'], pai_id, titulo,
+                is_extraordinaria=False, descricao=extras.get('descricao'),
+                responsavel_id=extras.get('responsavel_id'), dias=extras.get('dias') or 1,
+                sprint=extras.get('sprint')
+            )
+
+    if tipo_filho == 'subtarefa':
+        # Descobre epico_id pela tarefa
+        pai = obter_item_hierarquico_por_id(empresa_id, 'tarefa', pai_id)
+        if not pai:
+            raise ValueError("Tarefa pai não encontrada.")
+        return adicionar_subtarefa(empresa_id, pai['epico_id'], pai_id, titulo)
+
+    return None
 
